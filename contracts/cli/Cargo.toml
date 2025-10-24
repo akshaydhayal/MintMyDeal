@@ -1,0 +1,20 @@
+[package]
+name = "monke_deals_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { workspace = true }
+clap = { workspace = true }
+solana-client = { workspace = true }
+solana-sdk = { workspace = true }
+solana-transaction-status = { workspace = true }
+solana-program = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+borsh = { workspace = true }
+
+deal_platform = { path = "../programs/deal_platform" }
+
+[dev-dependencies]
+solana-logger = { workspace = true }
