@@ -6,6 +6,7 @@ use solana_program::{
 	account_info::{next_account_info, AccountInfo},
 	entrypoint::ProgramResult,
 	msg,
+	program::{invoke},
 	program_error::ProgramError,
 	pubkey::Pubkey,
 	system_instruction,
@@ -32,12 +33,17 @@ impl Processor {
 			DealInstruction::RegisterMerchant { name, uri } => {
 				Self::process_register_merchant(program_id, accounts, name, uri)
 			}
+			DealInstruction::SetCollectionMint { collection_mint } => {
+				Self::process_set_collection_mint(program_id, accounts, Pubkey::new_from_array(collection_mint))
+			}
 			DealInstruction::CreateDeal { deal_id, title, description, discount_percent, expiry, total_supply } => {
 				Self::process_create_deal(program_id, accounts, deal_id, title, description, discount_percent, expiry, total_supply)
 			}
 			DealInstruction::MintCouponNft { deal_id } => Self::process_mint_coupon(program_id, accounts, deal_id),
 			DealInstruction::RedeemCoupon { mint } => Self::process_redeem_coupon(program_id, accounts, Pubkey::new_from_array(mint)),
 			DealInstruction::AddReview { deal_id, rating, comment } => Self::process_add_review(program_id, accounts, deal_id, rating, comment),
+			DealInstruction::VerifyAndCountMint { deal_id, mint: _ } => Self::process_verify_and_count_mint(program_id, accounts, deal_id),
+			DealInstruction::RedeemAndBurn { mint } => Self::process_redeem_and_burn(program_id, accounts, Pubkey::new_from_array(mint)),
 		}
 	}
 
@@ -81,8 +87,31 @@ impl Processor {
 			&[&[seeds::MERCHANT, payer.key.as_ref(), &[bump]]],
 		)?;
 
-		let merchant = Merchant { merchant: *payer.key, name, uri, total_deals: 0 };
+		let merchant = Merchant { merchant: *payer.key, name, uri, total_deals: 0, collection_mint: Pubkey::default() };
 		merchant.serialize(&mut &mut merchant_pda_ai.data.borrow_mut()[..])?;
+		Ok(())
+	}
+
+	fn process_set_collection_mint(
+		program_id: &Pubkey,
+		accounts: &[AccountInfo],
+		collection_mint: Pubkey,
+	) -> ProgramResult {
+		let account_iter = &mut accounts.iter();
+		let payer = next_account_info(account_iter)?; // signer (merchant)
+		let merchant_pda_ai = next_account_info(account_iter)?; // write
+
+		if !payer.is_signer { return Err(DealError::Unauthorized.into()); }
+		let (merchant_pda, _bump) = Pubkey::find_program_address(&[seeds::MERCHANT, payer.key.as_ref()], program_id);
+		if merchant_pda != *merchant_pda_ai.key { return Err(DealError::PdaDerivationMismatch.into()); }
+
+		let mut merchant: Merchant = {
+			let data = merchant_pda_ai.data.borrow();
+			Self::read_unpacked(&data)?
+		};
+		merchant.collection_mint = collection_mint;
+		let mut dst = merchant_pda_ai.data.borrow_mut();
+		merchant.serialize(&mut &mut dst[..])?;
 		Ok(())
 	}
 
@@ -287,6 +316,101 @@ impl Processor {
 		let now = Clock::get()?.unix_timestamp;
 		let review = Review { user: *user.key, deal: *deal_pda_ai.key, rating, comment, created_at: now };
 		review.serialize(&mut &mut review_pda_ai.data.borrow_mut()[..])?;
+		Ok(())
+	}
+
+	fn process_verify_and_count_mint(
+		program_id: &Pubkey,
+		accounts: &[AccountInfo],
+		deal_id: u64,
+	) -> ProgramResult {
+		let account_iter = &mut accounts.iter();
+		let user = next_account_info(account_iter)?; // signer
+		let merchant_pda_ai = next_account_info(account_iter)?; // read
+		let deal_pda_ai = next_account_info(account_iter)?; // write
+
+		if !user.is_signer { return Err(DealError::Unauthorized.into()); }
+
+		// Read merchant to resolve original merchant pubkey and deal PDA
+		let merchant: Merchant = {
+			let data = merchant_pda_ai.data.borrow();
+			Self::read_unpacked(&data)?
+		};
+		let (expected_deal_pda, _bump) = Pubkey::find_program_address(&[seeds::DEAL, merchant.merchant.as_ref(), &deal_id.to_le_bytes()], program_id);
+		if expected_deal_pda != *deal_pda_ai.key { return Err(DealError::PdaDerivationMismatch.into()); }
+
+		// Increment supply if available
+		{
+			let mut deal: Deal = {
+				let data = deal_pda_ai.data.borrow();
+				Self::read_unpacked(&data)?
+			};
+			if deal.minted >= deal.total_supply { return Err(DealError::DealSoldOut.into()); }
+			deal.minted = deal.minted.checked_add(1).ok_or(DealError::Overflow)?;
+			let mut dst = deal_pda_ai.data.borrow_mut();
+			deal.serialize(&mut &mut dst[..])?;
+		}
+		Ok(())
+	}
+
+	fn process_redeem_and_burn(
+		program_id: &Pubkey,
+		accounts: &[AccountInfo],
+		mint: Pubkey,
+	) -> ProgramResult {
+		let account_iter = &mut accounts.iter();
+		let user = next_account_info(account_iter)?; // signer & burn authority
+		let user_token_ai = next_account_info(account_iter)?; // user's token account for mint
+		let mint_ai = next_account_info(account_iter)?; // mint account
+		let token_program_ai = next_account_info(account_iter)?; // spl-token program
+		let redeem_log_ai = next_account_info(account_iter)?; // pda
+		let system_program = next_account_info(account_iter)?;
+
+		if !user.is_signer { return Err(DealError::Unauthorized.into()); }
+		if *mint_ai.key != mint { return Err(DealError::InvalidInput.into()); }
+
+		// Burn 1 token
+		let burn_ix = spl_token::instruction::burn(
+			&spl_token::id(),
+			user_token_ai.key,
+			mint_ai.key,
+			user.key,
+			&[],
+			1,
+		).map_err(|_| ProgramError::InvalidInstructionData)?;
+		invoke(
+			&burn_ix,
+			&[
+				user_token_ai.clone(),
+				mint_ai.clone(),
+				user.clone(),
+				token_program_ai.clone(),
+			],
+		)?;
+
+		// Write RedeemLog once
+		let (redeem_pda, bump) = Pubkey::find_program_address(&[seeds::REDEEM, mint.as_ref()], program_id);
+		if redeem_pda != *redeem_log_ai.key { return Err(DealError::PdaDerivationMismatch.into()); }
+		if !redeem_log_ai.data_is_empty() { return Err(DealError::AlreadyRedeemed.into()); }
+
+		let rent = solana_program::rent::Rent::get()?;
+		let lamports = rent.minimum_balance(RedeemLog::space());
+		let create_ix = system_instruction::create_account(
+			user.key,
+			redeem_log_ai.key,
+			lamports,
+			RedeemLog::space() as u64,
+			program_id,
+		);
+		solana_program::program::invoke_signed(
+			&create_ix,
+			&[user.clone(), redeem_log_ai.clone(), system_program.clone()],
+			&[&[seeds::REDEEM, mint.as_ref(), &[bump]]],
+		)?;
+
+		let now = Clock::get()?.unix_timestamp;
+		let log = RedeemLog { token_mint: mint, user: *user.key, redeemed_at: now };
+		log.serialize(&mut &mut redeem_log_ai.data.borrow_mut()[..])?;
 		Ok(())
 	}
 }

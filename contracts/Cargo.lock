@@ -1161,6 +1161,7 @@ dependencies = [
  "solana-program",
  "solana-program-test",
  "solana-sdk",
+ "spl-token",
  "thiserror",
  "thiserror-no-std",
 ]
