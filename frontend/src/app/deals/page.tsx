@@ -5,7 +5,8 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { deriveDealPda, deriveMerchantPda, fetchAllDeals, fetchMerchant, ixCreateDeal, ixMintCoupon, ixVerifyAndCountMint, type DealAccount, type MerchantAccount } from '@/lib/solana/instructions';
 import { useUmi } from '@/lib/umi/client';
-import { mintCouponNft, uploadImageAndJson } from '@/lib/umi/mint';
+import { mintCoreAsset } from '@/lib/umi/mint';
+import { mintTokenMetadataNft } from '@/lib/umi/mint';
 
 export default function DealsPage() {
 	const { connection } = useConnection();
@@ -87,37 +88,23 @@ export default function DealsPage() {
 		setMinting(true);
 		try {
 			const dealId = BigInt(Number(formData.get('dealId') || 1));
-			const merchantPda = deriveMerchantPda(programId, publicKey);
-			const dealPda = deriveDealPda(programId, publicKey, dealId);
-			const merchantAcc = await fetchMerchant(connection, merchantPda);
-			if (!merchantAcc) throw new Error('Merchant not found');
-			const collection = new PublicKey(merchantAcc.collection_mint);
-			if (collection.equals(PublicKey.default)) throw new Error('Collection not set');
+			const deal = deals.find(d => BigInt(d.account.deal_id as any) === dealId);
+			if (!deal) throw new Error('Deal not found in list');
+			const title = deal.account.title;
+			const description = deal.account.description;
+			const imageFile = formData.get('image') as File | null;
 
-			// Upload per-coupon JSON (or use a template); mint NFT to user
-			const name = `Deal #${dealId}`;
-			const jsonUri = await umi.uploader.uploadJson({ name, description: 'Coupon NFT', attributes: [{ trait_type: 'deal_id', value: Number(dealId) }] });
-			const minted = await mintCouponNft(umi, collection.toBase58(), name, 'DEAL', jsonUri);
-
-			// Now verify on-chain and count against supply
-			const ix = ixVerifyAndCountMint(programId, publicKey, merchantPda, dealPda, dealId, new PublicKey(minted));
-			const tx = new Transaction().add(ix);
-			tx.feePayer = publicKey;
-			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-			const signed = await signTransaction(tx);
-			const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: 'confirmed' });
-			await connection.confirmTransaction(sig, 'confirmed');
+			// Mint Token Metadata NFT to ensure full metadata support
+			const minted = await mintTokenMetadataNft(umi, title, description, imageFile || undefined);
 			setErrorMsg(null);
-			const list = await fetchAllDeals(connection, programId);
-			setDeals(list.map(d => ({ pubkey: d.pubkey.toBase58(), account: d.account })));
-			alert(`NFT minted and verified: ${sig}`);
+			alert(`NFT created: ${minted.mint}`);
 		} catch (e: any) {
 			console.error('mint error', e);
 			setErrorMsg(e?.message || 'Transaction failed');
 		} finally {
 			setMinting(false);
 		}
-	}, [publicKey, signTransaction, connection, programId, umi]);
+	}, [publicKey, signTransaction, programId, umi, deals]);
 
 	return (
 		<div className="space-y-8">
@@ -199,12 +186,16 @@ export default function DealsPage() {
 			</form>
 
 			<form action={onMint} className="rounded-lg border border-neutral-800 p-4 space-y-3">
-				<div className="font-medium">Mint Coupon NFT (with collection)</div>
+				<div className="font-medium">Mint Coupon Asset (Core)</div>
 				<label className="space-y-1 block">
 					<span className="text-sm text-neutral-400">Deal ID</span>
 					<input name="dealId" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={1} />
 				</label>
-				<button disabled={minting} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{minting ? 'Minting…' : 'Mint & Verify'}</button>
+				<label className="space-y-1 block">
+					<span className="text-sm text-neutral-400">Image (optional)</span>
+					<input name="image" type="file" accept="image/*" className="w-full text-sm" />
+				</label>
+				<button disabled={minting} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{minting ? 'Minting…' : 'Mint Asset'}</button>
 			</form>
 		</div>
 	)
