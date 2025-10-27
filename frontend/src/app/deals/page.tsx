@@ -3,15 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
-import { deriveDealPda, deriveMerchantPda, fetchAllDeals, fetchMerchant, ixCreateDeal, ixMintCoupon, ixVerifyAndCountMint, type DealAccount, type MerchantAccount } from '@/lib/solana/instructions';
+import { deriveDealPda, deriveMerchantPda, fetchAllDeals, ixVerifyAndCountMint, type DealAccount } from '@/lib/solana/instructions';
 import { useUmi } from '@/lib/umi/client';
 import { generateSigner, percentAmount } from '@metaplex-foundation/umi';
 import { createNft } from '@metaplex-foundation/mpl-token-metadata';
+import { useToast } from '@/lib/toast/ToastContext';
+import { parseContractError, getShortTxSignature, getExplorerUrl } from '@/lib/solana/errors';
 
 export default function DealsPage() {
 	const { connection } = useConnection();
 	const { publicKey, signTransaction } = useWallet();
 	const umi = useUmi();
+	const { showToast, updateToast } = useToast();
 	const [programIdError, setProgramIdError] = useState<string | null>(null);
 	const programId = useMemo(() => {
 		try {
@@ -24,12 +27,10 @@ export default function DealsPage() {
 		}
 	}, []);
 
-	const [creating, setCreating] = useState(false);
 	const [minting, setMinting] = useState(false);
 	const [deals, setDeals] = useState<Array<{ pubkey: string; account: DealAccount }>>([]);
 	const [loading, setLoading] = useState(true);
 	const [errorMsg, setErrorMsg] = useState<string | null>(null);
-	const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
 	useEffect(() => {
 		let mounted = true;
@@ -51,95 +52,13 @@ export default function DealsPage() {
 		return () => { mounted = false };
 	}, [connection, programId]);
 
-	const onCreate = useCallback(async (formData: FormData) => {
-		if (!publicKey || !signTransaction || !programId) { setErrorMsg('Connect wallet and configure program id'); return; }
-		setCreating(true);
-		setUploadStatus(null);
-		setErrorMsg(null);
-		try {
-			// Check if merchant is registered
-			setUploadStatus('📋 Checking merchant registration...');
-			const merchantPda = deriveMerchantPda(programId, publicKey);
-			const merchantAcc = await fetchMerchant(connection, merchantPda);
-			if (!merchantAcc) {
-				throw new Error('You must register as a merchant first! Go to /merchant page to register.');
-			}
-			
-			// Auto-calculate next deal ID
-			const dealId = BigInt(merchantAcc.total_deals + 1);
-			setUploadStatus(`✨ Creating Deal #${dealId}...`);
-			
-			const title = String(formData.get('title') || '');
-			const description = String(formData.get('description') || '');
-			const discount = Number(formData.get('discount') || 0);
-			const total = Number(formData.get('total') || 1);
-			const expiry = BigInt(Math.floor(Date.now() / 1000) + 86400);
-			const imageFile = formData.get('image') as File | null;
-			
-			if (!title) throw new Error('Title is required');
-			if (!imageFile) throw new Error('NFT image is required');
-
-			// Upload image and metadata once for the entire deal
-			setUploadStatus('📤 Uploading image to Irys/Arweave...');
-			console.log('🚀 Uploading NFT image and metadata for deal...');
-			const uploadFormData = new FormData();
-			uploadFormData.append('name', title);
-			uploadFormData.append('description', description);
-			uploadFormData.append('image', imageFile);
-			
-			const uploadRes = await fetch('/api/irys-upload', {
-				method: 'POST',
-				body: uploadFormData,
-			});
-			
-			if (!uploadRes.ok) {
-				const err = await uploadRes.json();
-				throw new Error(`Upload failed: ${err.error || uploadRes.status}`);
-			}
-			
-			const { imageUri, metadataUri } = await uploadRes.json();
-			setUploadStatus('✅ Upload complete! Creating deal on-chain...');
-			console.log('✅ Uploaded - Image:', imageUri, 'Metadata:', metadataUri);
-
-			const dealPda = deriveDealPda(programId, publicKey, dealId);
-			const ix = ixCreateDeal(programId, publicKey, merchantPda, dealPda, {
-				deal_id: dealId,
-				title,
-				description,
-				discount_percent: discount,
-				expiry,
-				total_supply: total,
-				image_uri: imageUri || '',
-				metadata_uri: metadataUri,
-			});
-			const tx = new Transaction().add(ix);
-			tx.feePayer = publicKey;
-			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-			const signed = await signTransaction(tx);
-			const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: 'confirmed' });
-			
-			setUploadStatus('⏳ Confirming transaction...');
-			await connection.confirmTransaction(sig, 'confirmed');
-			
-			setUploadStatus('🎉 Deal created successfully!');
-			setErrorMsg(null);
-			const list = await fetchAllDeals(connection, programId);
-			setDeals(list.map(d => ({ pubkey: d.pubkey.toBase58(), account: d.account })));
-			
-			setTimeout(() => setUploadStatus(null), 3000); // Clear success message after 3s
-			alert(`✅ Deal #${dealId} created successfully!\n\n📸 Image: ${imageUri}\n📄 Metadata: ${metadataUri}\n🔗 Tx: ${sig}`);
-		} catch (e: any) {
-			console.error('create deal error', e);
-			setErrorMsg(e?.message || 'Transaction failed');
-			setUploadStatus(null);
-		} finally {
-			setCreating(false);
-		}
-	}, [publicKey, signTransaction, connection, programId]);
-
 	const onMint = useCallback(async (formData: FormData) => {
-		if (!publicKey || !signTransaction || !programId) { setErrorMsg('Connect wallet and configure program id'); return; }
+		if (!publicKey || !signTransaction || !programId) { 
+			showToast('error', 'Wallet Not Connected', 'Please connect your wallet');
+			return;
+		}
 		setMinting(true);
+		let toastId: string | null = null;
 		try {
 			const dealId = BigInt(Number(formData.get('dealId') || 1));
 			const deal = deals.find(d => BigInt(d.account.deal_id as any) === dealId);
@@ -160,7 +79,7 @@ export default function DealsPage() {
 			}
 
 			// Mint Token Metadata NFT using stored metadata URI (no upload needed!)
-			console.log('🎨 Minting NFT using pre-uploaded metadata:', metadataUri);
+			toastId = showToast('loading', `Minting NFT: ${title}`, 'Creating NFT on-chain...');
 			const mint = generateSigner(umi);
 			await createNft(umi, {
 				mint,
@@ -172,9 +91,9 @@ export default function DealsPage() {
 			}).sendAndConfirm(umi);
 			
 			const mintPubkey = new PublicKey(mint.publicKey.toString());
-			console.log('✅ NFT minted:', mintPubkey.toBase58());
 			
 			// Call VerifyAndCountMint to increment on-chain counter
+			updateToast(toastId, { title: 'Verifying and counting...', message: 'Updating deal counter' });
 			const merchantPubkey = new PublicKey(deal.account.merchant);
 			const merchantPda = deriveMerchantPda(programId, merchantPubkey);
 			const dealPda = deriveDealPda(programId, merchantPubkey, dealId);
@@ -184,21 +103,35 @@ export default function DealsPage() {
 			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 			const signed = await signTransaction(tx);
 			const sig = await connection.sendRawTransaction(signed.serialize());
+			updateToast(toastId, { title: 'Confirming transaction...', message: getShortTxSignature(sig) });
 			await connection.confirmTransaction(sig, 'confirmed');
 			
 			setErrorMsg(null);
-			alert(`NFT minted and counted!\nMint: ${mintPubkey.toBase58()}\nVerify Tx: ${sig}`);
 			
 			// Refresh deals list to show updated count
 			const list = await fetchAllDeals(connection, programId);
 			setDeals(list.map(d => ({ pubkey: d.pubkey.toBase58(), account: d.account })));
+			
+			updateToast(toastId, { 
+				type: 'success', 
+				title: 'NFT Minted Successfully!', 
+				message: `Mint: ${getShortTxSignature(mintPubkey.toBase58())}`,
+				txLink: getExplorerUrl(sig),
+				duration: 10000 
+			});
 		} catch (e: any) {
 			console.error('mint error', e);
-			setErrorMsg(e?.message || 'Transaction failed');
+			const errorMsg = parseContractError(e);
+			setErrorMsg(errorMsg);
+			if (toastId) {
+				updateToast(toastId, { type: 'error', title: 'Minting Failed', message: errorMsg, duration: 10000 });
+			} else {
+				showToast('error', 'Minting Failed', errorMsg);
+			}
 		} finally {
 			setMinting(false);
 		}
-	}, [publicKey, signTransaction, programId, umi, deals, connection]);
+	}, [publicKey, signTransaction, programId, umi, deals, connection, showToast, updateToast]);
 
 	return (
 		<div className="space-y-8">
@@ -212,12 +145,6 @@ export default function DealsPage() {
 			{errorMsg && (
 				<div className="rounded border border-yellow-800 bg-yellow-950/50 text-yellow-200 px-3 py-2">
 					{errorMsg}
-				</div>
-			)}
-			{uploadStatus && (
-				<div className="rounded border border-blue-800 bg-blue-950/50 text-blue-200 px-3 py-2 flex items-center gap-2">
-					{uploadStatus.includes('...') && <span className="animate-pulse">●</span>}
-					{uploadStatus}
 				</div>
 			)}
 
@@ -243,50 +170,43 @@ export default function DealsPage() {
 				) : deals.length === 0 ? (
 					<div className="text-neutral-400">No deals found.</div>
 				) : (
-					<ul className="divide-y divide-neutral-800">
+					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 						{deals.map(d => (
-							<li key={d.pubkey} className="py-3 flex items-start justify-between gap-4">
-								<div>
-									<div className="font-medium">{d.account.title}</div>
-									<div className="text-sm text-neutral-400">{d.account.description}</div>
-									<div className="text-sm text-neutral-400">Deal PDA: <span className="font-mono">{d.pubkey}</span></div>
+							<div key={d.pubkey} className="rounded-lg border border-neutral-800 overflow-hidden hover:border-neutral-600 transition-colors">
+								{d.account.image_uri && (
+									<div className="aspect-video w-full bg-neutral-900 relative">
+										<img 
+											src={d.account.image_uri} 
+											alt={d.account.title}
+											className="w-full h-full object-cover"
+											onError={(e) => {
+												e.currentTarget.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23171717" width="400" height="300"/%3E%3Ctext fill="%23525252" font-family="system-ui" font-size="18" x="50%25" y="50%25" text-anchor="middle" dominant-baseline="middle"%3EImage not available%3C/text%3E%3C/svg%3E';
+											}}
+										/>
+									</div>
+								)}
+								<div className="p-4 space-y-2">
+									<div className="flex items-start justify-between gap-2">
+										<div className="font-medium text-lg">{d.account.title}</div>
+										<div className="px-2 py-0.5 rounded bg-green-900/50 text-green-200 text-xs font-medium whitespace-nowrap">
+											{d.account.discount_percent}% OFF
+										</div>
+									</div>
+									<p className="text-sm text-neutral-400 line-clamp-2">{d.account.description}</p>
+									<div className="flex items-center justify-between pt-2 border-t border-neutral-800">
+										<div className="text-xs text-neutral-500">
+											Deal ID: <span className="font-mono">{String(d.account.deal_id)}</span>
+										</div>
+										<div className="text-sm text-neutral-300 font-medium">
+											{d.account.minted}/{d.account.total_supply} minted
+										</div>
+									</div>
 								</div>
-								<div className="text-sm text-neutral-300">{d.account.minted}/{d.account.total_supply} minted</div>
-							</li>
+							</div>
 						))}
-					</ul>
+					</div>
 				)}
 			</section>
-
-			<form action={onCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg border border-neutral-800 p-4">
-				<div className="col-span-1 md:col-span-2">
-					<div className="font-medium">Create Deal (Auto-Numbered)</div>
-					<div className="text-xs text-neutral-400 mt-1">Deal ID will be automatically assigned based on your total deals</div>
-				</div>
-				<label className="space-y-1">
-					<span className="text-sm text-neutral-400">Title</span>
-					<input name="title" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" placeholder="10% Off Pizza" required />
-				</label>
-				<label className="space-y-1">
-					<span className="text-sm text-neutral-400">Description</span>
-					<input name="description" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" placeholder="Save on purchase" />
-				</label>
-				<label className="space-y-1">
-					<span className="text-sm text-neutral-400">Discount %</span>
-					<input name="discount" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={10} />
-				</label>
-				<label className="space-y-1">
-					<span className="text-sm text-neutral-400">Total Supply</span>
-					<input name="total" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={2} />
-				</label>
-				<label className="space-y-1 col-span-1 md:col-span-2">
-					<span className="text-sm text-neutral-400">NFT Image (Required - uploaded once for all mints)</span>
-					<input name="image" type="file" accept="image/*" className="w-full text-sm" required />
-				</label>
-				<div className="col-span-1 md:col-span-2">
-					<button disabled={creating} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{creating ? 'Creating & Uploading…' : 'Create Deal'}</button>
-				</div>
-			</form>
 
 			<form action={onMint} className="rounded-lg border border-neutral-800 p-4 space-y-3">
 				<div className="font-medium">Mint Coupon NFT (Uses Pre-Uploaded Metadata)</div>

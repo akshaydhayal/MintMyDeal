@@ -70,8 +70,9 @@ export async function mintCoreAsset(
 		name,
 		uri: metadataUri,
 	}).sendAndConfirm(umi);
-	console.log('[core-mint] asset minted:', { asset: asset.publicKey.toString(), metadataUri, imageUri, sig: tx.signature.toBase64() });
-	return { asset: asset.publicKey.toString(), signature: tx.signature.toBase64(), uri: metadataUri };
+	const sigString = typeof tx.signature === 'string' ? tx.signature : Buffer.from(tx.signature).toString('base64');
+	console.log('[core-mint] asset minted:', { asset: asset.publicKey.toString(), metadataUri, imageUri, sig: sigString });
+	return { asset: asset.publicKey.toString(), signature: sigString, uri: metadataUri };
 }
 
 // Legacy function for merchant page - uploads image and JSON metadata

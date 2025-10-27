@@ -24,13 +24,17 @@ export function useUmi() {
 			name: 'splToken',
 			publicKey: splTokenPubkey,
 			isOnCluster: () => true,
-		});
+			getErrorFromCode: () => null,
+			getErrorFromName: () => null,
+		} as any);
 		
 		u.programs.add({
 			name: 'splAssociatedToken',
 			publicKey: splAssociatedTokenPubkey,
 			isOnCluster: () => true,
-		});
+			getErrorFromCode: () => null,
+			getErrorFromName: () => null,
+		} as any);
 		
 		if (wallet && wallet.publicKey) {
 			u = u.use(walletAdapterIdentity(wallet));
