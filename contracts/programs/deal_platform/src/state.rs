@@ -74,9 +74,25 @@ impl RedeemLog {
 	}
 }
 
+#[derive(BorshSerializeDerive, BorshDeserializeDerive, Debug, PartialEq, Eq, Clone)]
+pub struct Listing {
+	pub seller: Pubkey,
+	pub nft_mint: Pubkey,
+	pub price: u64,
+	pub created_at: i64,
+}
+
+impl Listing {
+	pub fn space() -> usize {
+		32 + 32 + 8 + 8
+	}
+}
+
 pub mod seeds {
 	pub const MERCHANT: &[u8] = b"merchant";
 	pub const DEAL: &[u8] = b"deal";
 	pub const REVIEW: &[u8] = b"review";
 	pub const REDEEM: &[u8] = b"redeem";
+	pub const LISTING: &[u8] = b"listing";
+	pub const ESCROW: &[u8] = b"escrow";
 }

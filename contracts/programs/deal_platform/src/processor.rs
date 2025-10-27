@@ -16,7 +16,7 @@ use solana_program::{
 use crate::{
 	error::DealError,
 	instruction::DealInstruction,
-	state::{seeds, Deal, Merchant, RedeemLog, Review, MAX_COMMENT_LEN, MAX_DESC_LEN, MAX_NAME_LEN, MAX_TITLE_LEN, MAX_URI_LEN},
+	state::{seeds, Deal, Listing, Merchant, RedeemLog, Review, MAX_COMMENT_LEN, MAX_DESC_LEN, MAX_NAME_LEN, MAX_TITLE_LEN, MAX_URI_LEN},
 };
 
 pub struct Processor;
@@ -44,6 +44,8 @@ impl Processor {
 			DealInstruction::AddReview { deal_id, rating, comment } => Self::process_add_review(program_id, accounts, deal_id, rating, comment),
 			DealInstruction::VerifyAndCountMint { deal_id, mint: _ } => Self::process_verify_and_count_mint(program_id, accounts, deal_id),
 			DealInstruction::RedeemAndBurn { mint } => Self::process_redeem_and_burn(program_id, accounts, Pubkey::new_from_array(mint)),
+			DealInstruction::ListNft { price } => Self::process_list_nft(program_id, accounts, price),
+			DealInstruction::BuyNft => Self::process_buy_nft(program_id, accounts),
 		}
 	}
 
@@ -417,6 +419,138 @@ impl Processor {
 		let now = Clock::get()?.unix_timestamp;
 		let log = RedeemLog { token_mint: mint, user: *user.key, redeemed_at: now };
 		log.serialize(&mut &mut redeem_log_ai.data.borrow_mut()[..])?;
+		Ok(())
+	}
+
+	fn process_list_nft(program_id: &Pubkey, accounts: &[AccountInfo], price: u64) -> ProgramResult {
+		let accounts_iter = &mut accounts.iter();
+		let seller = next_account_info(accounts_iter)?;
+		let listing_pda = next_account_info(accounts_iter)?;
+		let nft_mint = next_account_info(accounts_iter)?;
+		let seller_token_account = next_account_info(accounts_iter)?;
+		let escrow_token_account = next_account_info(accounts_iter)?;
+		let token_program = next_account_info(accounts_iter)?;
+		let system_program = next_account_info(accounts_iter)?;
+
+		if !seller.is_signer { return Err(ProgramError::MissingRequiredSignature); }
+		if price == 0 { return Err(DealError::InvalidInput.into()); }
+
+		// Verify listing PDA
+		let (listing_pda_pubkey, listing_bump) = Pubkey::find_program_address(
+			&[seeds::LISTING, nft_mint.key.as_ref(), seller.key.as_ref()],
+			program_id,
+		);
+		if listing_pda_pubkey != *listing_pda.key {
+			msg!("Invalid listing PDA");
+			return Err(ProgramError::InvalidAccountData);
+		}
+
+		// Create listing account
+		let rent = solana_program::rent::Rent::get()?;
+		let space = Listing::space();
+		let lamports = rent.minimum_balance(space);
+		let create_ix = system_instruction::create_account(
+			seller.key,
+			listing_pda.key,
+			lamports,
+			space as u64,
+			program_id,
+		);
+		solana_program::program::invoke_signed(
+			&create_ix,
+			&[seller.clone(), listing_pda.clone(), system_program.clone()],
+			&[&[seeds::LISTING, nft_mint.key.as_ref(), seller.key.as_ref(), &[listing_bump]]],
+		)?;
+
+		// Transfer NFT to escrow
+		let transfer_ix = spl_token::instruction::transfer(
+			token_program.key,
+			seller_token_account.key,
+			escrow_token_account.key,
+			seller.key,
+			&[],
+			1,
+		)?;
+		invoke(&transfer_ix, &[seller_token_account.clone(), escrow_token_account.clone(), seller.clone(), token_program.clone()])?;
+
+		// Save listing data
+		let clock = Clock::get()?;
+		let listing = Listing {
+			seller: *seller.key,
+			nft_mint: *nft_mint.key,
+			price,
+			created_at: clock.unix_timestamp,
+		};
+		listing.serialize(&mut &mut listing_pda.data.borrow_mut()[..])?;
+
+		msg!("NFT listed for {} lamports", price);
+		Ok(())
+	}
+
+	fn process_buy_nft(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
+		let accounts_iter = &mut accounts.iter();
+		let buyer = next_account_info(accounts_iter)?;
+		let seller = next_account_info(accounts_iter)?;
+		let listing_pda = next_account_info(accounts_iter)?;
+		let nft_mint = next_account_info(accounts_iter)?;
+		let escrow_pda = next_account_info(accounts_iter)?;
+		let escrow_token_account = next_account_info(accounts_iter)?;
+		let buyer_token_account = next_account_info(accounts_iter)?;
+		let token_program = next_account_info(accounts_iter)?;
+		let system_program = next_account_info(accounts_iter)?;
+
+		if !buyer.is_signer { return Err(ProgramError::MissingRequiredSignature); }
+
+		// Verify listing PDA
+		let (listing_pda_pubkey, _) = Pubkey::find_program_address(
+			&[seeds::LISTING, nft_mint.key.as_ref(), seller.key.as_ref()],
+			program_id,
+		);
+		if listing_pda_pubkey != *listing_pda.key {
+			msg!("Invalid listing PDA");
+			return Err(ProgramError::InvalidAccountData);
+		}
+
+		// Deserialize listing
+		let listing = Listing::try_from_slice(&listing_pda.data.borrow())?;
+
+		// Verify seller matches
+		if listing.seller != *seller.key { return Err(DealError::Unauthorized.into()); }
+
+		// Transfer SOL from buyer to seller
+		invoke(
+			&system_instruction::transfer(buyer.key, seller.key, listing.price),
+			&[buyer.clone(), seller.clone(), system_program.clone()],
+		)?;
+
+		// Verify and derive escrow PDA
+		let (escrow_pda_pubkey, escrow_bump) = Pubkey::find_program_address(&[seeds::ESCROW, nft_mint.key.as_ref()], program_id);
+		if escrow_pda_pubkey != *escrow_pda.key {
+			msg!("Invalid escrow PDA");
+			return Err(ProgramError::InvalidAccountData);
+		}
+		
+		// Transfer NFT from escrow to buyer
+		let transfer_ix = spl_token::instruction::transfer(
+			token_program.key,
+			escrow_token_account.key,
+			buyer_token_account.key,
+			escrow_pda.key,
+			&[],
+			1,
+		)?;
+		solana_program::program::invoke_signed(
+			&transfer_ix,
+			&[escrow_token_account.clone(), buyer_token_account.clone(), escrow_pda.clone(), token_program.clone()],
+			&[&[seeds::ESCROW, nft_mint.key.as_ref(), &[escrow_bump]]],
+		)?;
+
+		// Close listing account and return rent to seller
+		**seller.lamports.borrow_mut() = seller.lamports().checked_add(listing_pda.lamports()).ok_or(ProgramError::ArithmeticOverflow)?;
+		**listing_pda.lamports.borrow_mut() = 0;
+		listing_pda.data.borrow_mut().fill(0);
+
+		msg!("NFT purchased for {} lamports", listing.price);
 		Ok(())
 	}
 }
