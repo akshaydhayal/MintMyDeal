@@ -15,7 +15,6 @@ export function SolanaProviders({ children }: { children: ReactNode }) {
 		<ConnectionProvider endpoint={endpoint} config={{ commitment: 'confirmed' }}>
 			<WalletProvider wallets={wallets} autoConnect>
 				<WalletModalProvider>
-					<div className="max-w-5xl mx-auto px-4 py-3 flex justify-end"><WalletMultiButton /></div>
 					{children}
 				</WalletModalProvider>
 			</WalletProvider>
