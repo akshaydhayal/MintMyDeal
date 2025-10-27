@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
-import { deriveDealPda, deriveMerchantPda, fetchAllDeals, ixVerifyAndCountMint, type DealAccount } from '@/lib/solana/instructions';
+import { deriveDealPda, deriveMerchantPda, deriveReviewPda, fetchAllDeals, fetchReviewsForDeal, ixVerifyAndCountMint, ixAddReview, type DealAccount, type ReviewAccount } from '@/lib/solana/instructions';
 import { useUmi } from '@/lib/umi/client';
 import { generateSigner, percentAmount } from '@metaplex-foundation/umi';
 import { createNft } from '@metaplex-foundation/mpl-token-metadata';
@@ -23,6 +23,14 @@ export default function DealDetailPage() {
 	const [loading, setLoading] = useState(true);
 	const [minting, setMinting] = useState(false);
 	const [errorMsg, setErrorMsg] = useState<string | null>(null);
+	
+	// Reviews state
+	const [reviews, setReviews] = useState<Array<{ pubkey: PublicKey; account: ReviewAccount }>>([]);
+	const [loadingReviews, setLoadingReviews] = useState(false);
+	const [submittingReview, setSubmittingReview] = useState(false);
+	const [newRating, setNewRating] = useState(5);
+	const [newComment, setNewComment] = useState('');
+	const [userReview, setUserReview] = useState<{ pubkey: PublicKey; account: ReviewAccount } | null>(null);
 
 	const dealPubkeyStr = params.id as string; // This is now the PDA address, not deal_id
 
@@ -59,6 +67,103 @@ export default function DealDetailPage() {
 		})();
 		return () => { mounted = false };
 	}, [dealPubkeyStr]); // Only re-fetch if the deal ID in URL changes
+
+	// Fetch reviews for this deal
+	useEffect(() => {
+		let mounted = true;
+		(async () => {
+			if (!deal) return;
+			try {
+				setLoadingReviews(true);
+				const dealPda = new PublicKey(deal.pubkey);
+				const fetchedReviews = await fetchReviewsForDeal(connection, programId, dealPda);
+				if (mounted) {
+					setReviews(fetchedReviews);
+					// Check if current user has already reviewed
+					if (publicKey) {
+						const userRev = fetchedReviews.find(r => 
+							Buffer.from(r.account.user).equals(publicKey.toBuffer())
+						);
+						setUserReview(userRev || null);
+					}
+					setLoadingReviews(false);
+				}
+			} catch (e: any) {
+				console.error('fetch reviews error', e);
+				if (mounted) setLoadingReviews(false);
+			}
+		})();
+		return () => { mounted = false };
+	}, [deal, publicKey, connection, programId]);
+
+	const onSubmitReview = useCallback(async () => {
+		if (!publicKey || !signTransaction || !deal) {
+			showToast('error', 'Cannot Submit Review', 'Please connect your wallet');
+			return;
+		}
+
+		if (!newComment.trim()) {
+			showToast('error', 'Comment Required', 'Please write a comment');
+			return;
+		}
+
+		if (newComment.length > 280) {
+			showToast('error', 'Comment Too Long', 'Maximum 280 characters');
+			return;
+		}
+
+		setSubmittingReview(true);
+		let toastId: string | null = null;
+
+		try {
+			const dealId = BigInt(deal.account.deal_id as any);
+			const merchantPubkey = new PublicKey(deal.account.merchant);
+			const merchantPda = deriveMerchantPda(programId, merchantPubkey);
+			const dealPda = new PublicKey(deal.pubkey);
+			const reviewPda = deriveReviewPda(programId, dealPda, publicKey);
+
+			toastId = showToast('loading', 'Submitting Review', 'Creating review on-chain...');
+
+			const ix = ixAddReview(programId, publicKey, merchantPda, dealPda, reviewPda, dealId, newRating, newComment);
+			const tx = new Transaction().add(ix);
+			tx.feePayer = publicKey;
+			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+			const signed = await signTransaction(tx);
+			const sig = await connection.sendRawTransaction(signed.serialize());
+			updateToast(toastId, { title: 'Confirming transaction...', message: getShortTxSignature(sig) });
+			await connection.confirmTransaction(sig, 'confirmed');
+
+			// Refresh reviews
+			const fetchedReviews = await fetchReviewsForDeal(connection, programId, dealPda);
+			setReviews(fetchedReviews);
+			const userRev = fetchedReviews.find(r => 
+				Buffer.from(r.account.user).equals(publicKey.toBuffer())
+			);
+			setUserReview(userRev || null);
+
+			// Reset form
+			setNewComment('');
+			setNewRating(5);
+
+			updateToast(toastId, {
+				type: 'success',
+				title: 'Review Submitted!',
+				message: 'Your review has been added',
+				txLink: getExplorerUrl(sig),
+				duration: 10000
+			});
+		} catch (e: any) {
+			console.error('submit review error', e);
+			const errorMsg = parseContractError(e);
+			if (toastId) {
+				updateToast(toastId, { type: 'error', title: 'Review Submission Failed', message: errorMsg, duration: 10000 });
+			} else {
+				showToast('error', 'Review Submission Failed', errorMsg);
+			}
+		} finally {
+			setSubmittingReview(false);
+		}
+	}, [publicKey, signTransaction, deal, newRating, newComment, connection, programId, showToast, updateToast]);
 
 	const onMint = useCallback(async () => {
 		if (!publicKey || !signTransaction || !deal) {
@@ -379,6 +484,173 @@ export default function DealDetailPage() {
 					</div>
 				</div>
 			)}
+
+			{/* Reviews Section */}
+			<div className="rounded-lg border border-amber-800/50 bg-amber-950/20 p-6">
+				<div className="flex items-center justify-between mb-6">
+					<h2 className="text-2xl font-bold flex items-center gap-2">
+						💬 Reviews & Ratings
+					</h2>
+					<div className="text-sm text-neutral-400">
+						{reviews.length} {reviews.length === 1 ? 'review' : 'reviews'}
+					</div>
+				</div>
+
+				{/* Average Rating Display */}
+				{reviews.length > 0 && (
+					<div className="mb-6 p-4 rounded-lg bg-neutral-900/50 border border-neutral-800">
+						<div className="flex items-center gap-4">
+							<div className="text-center">
+								<div className="text-4xl font-bold text-amber-400">
+									{(reviews.reduce((sum, r) => sum + r.account.rating, 0) / reviews.length).toFixed(1)}
+								</div>
+								<div className="text-xs text-neutral-500 mt-1">Average Rating</div>
+							</div>
+							<div className="flex-1">
+								<div className="flex items-center gap-1 mb-1">
+									{[1, 2, 3, 4, 5].map(star => (
+										<span key={star} className={`text-2xl ${
+											star <= Math.round(reviews.reduce((sum, r) => sum + r.account.rating, 0) / reviews.length)
+												? 'text-amber-400'
+												: 'text-neutral-700'
+										}`}>
+											★
+										</span>
+									))}
+								</div>
+								<div className="text-sm text-neutral-400">
+									Based on {reviews.length} {reviews.length === 1 ? 'review' : 'reviews'}
+								</div>
+							</div>
+						</div>
+					</div>
+				)}
+
+				{/* Add Review Form */}
+				{publicKey && !userReview && (
+					<div className="mb-6 p-4 rounded-lg border border-green-800/50 bg-green-950/20">
+						<div className="text-lg font-medium text-green-200 mb-3">✍️ Write a Review</div>
+						<div className="space-y-4">
+							{/* Star Rating Selector */}
+							<div>
+								<label className="text-sm text-neutral-400 block mb-2">Your Rating</label>
+								<div className="flex items-center gap-2">
+									{[1, 2, 3, 4, 5].map(star => (
+										<button
+											key={star}
+											type="button"
+											onClick={() => setNewRating(star)}
+											className="text-4xl hover:scale-110 transition-transform"
+										>
+											<span className={star <= newRating ? 'text-amber-400' : 'text-neutral-700'}>
+												★
+											</span>
+										</button>
+									))}
+									<span className="ml-2 text-sm text-neutral-400">
+										{newRating} {newRating === 1 ? 'star' : 'stars'}
+									</span>
+								</div>
+							</div>
+
+							{/* Comment Input */}
+							<div>
+								<label className="text-sm text-neutral-400 block mb-2">
+									Your Comment ({newComment.length}/280)
+								</label>
+								<textarea
+									value={newComment}
+									onChange={(e) => setNewComment(e.target.value)}
+									placeholder="Share your thoughts about this deal..."
+									className="w-full bg-neutral-900 border border-neutral-800 rounded-lg px-3 py-2 text-neutral-200 focus:border-green-600 focus:outline-none resize-none"
+									rows={4}
+									maxLength={280}
+								/>
+							</div>
+
+							{/* Submit Button */}
+							<button
+								onClick={onSubmitReview}
+								disabled={submittingReview || !newComment.trim()}
+								className="w-full px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							>
+								{submittingReview ? '⏳ Submitting...' : '📝 Submit Review'}
+							</button>
+						</div>
+					</div>
+				)}
+
+				{/* User's existing review - Just show a message */}
+				{userReview && (
+					<div className="mb-6 p-3 rounded-lg border border-blue-800/50 bg-blue-950/20 text-center">
+						<div className="text-sm text-blue-300">✅ You have already reviewed this deal</div>
+					</div>
+				)}
+
+				{/* Reviews List */}
+				{loadingReviews ? (
+					<div className="text-center py-8 text-neutral-400">
+						<div className="text-2xl mb-2 animate-pulse">⏳</div>
+						Loading reviews...
+					</div>
+				) : reviews.length === 0 ? (
+					<div className="text-center py-8 text-neutral-400">
+						<div className="text-4xl mb-2">📭</div>
+						<div>No reviews yet. Be the first to review this deal!</div>
+					</div>
+				) : (
+					<div className="space-y-4">
+						{reviews.map((review) => {
+							const reviewerAddress = new PublicKey(review.account.user).toBase58();
+							const isCurrentUser = publicKey && Buffer.from(review.account.user).equals(publicKey.toBuffer());
+							
+							return (
+								<div 
+									key={review.pubkey.toBase58()} 
+									className={`p-4 rounded-lg border ${
+										isCurrentUser 
+											? 'border-blue-700 bg-blue-950/30' 
+											: 'border-neutral-800 bg-neutral-900/30'
+									}`}
+								>
+									<div className="flex items-start justify-between mb-2">
+										<div className="flex items-center gap-2">
+											<div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-sm font-bold">
+												{reviewerAddress.slice(0, 2).toUpperCase()}
+											</div>
+											<div>
+												<div className="text-sm font-medium text-neutral-200">
+													{reviewerAddress.slice(0, 4)}...{reviewerAddress.slice(-4)}
+													{isCurrentUser && <span className="ml-2 text-xs text-blue-400">(You)</span>}
+												</div>
+												<div className="text-xs text-neutral-500">
+													{new Date(Number(review.account.created_at) * 1000).toLocaleDateString('en-US', {
+														year: 'numeric',
+														month: 'short',
+														day: 'numeric',
+														hour: '2-digit',
+														minute: '2-digit'
+													})}
+												</div>
+											</div>
+										</div>
+										<div className="flex items-center gap-1">
+											{[1, 2, 3, 4, 5].map(star => (
+												<span key={star} className={`text-lg ${
+													star <= review.account.rating ? 'text-amber-400' : 'text-neutral-700'
+												}`}>
+													★
+												</span>
+											))}
+										</div>
+									</div>
+									<p className="text-neutral-300 leading-relaxed">{review.account.comment}</p>
+								</div>
+							);
+						})}
+					</div>
+				)}
+			</div>
 		</div>
 	);
 }

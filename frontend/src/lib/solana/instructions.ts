@@ -56,6 +56,15 @@ const schemas = {
 			metadata_uri: 'string',
 		},
 	},
+	Review: {
+		struct: {
+			user: { array: { type: 'u8', len: 32 } },
+			deal: { array: { type: 'u8', len: 32 } },
+			rating: 'u8',
+			comment: 'string',
+			created_at: 'i64',
+		},
+	},
 } as const;
 
 function serialize(schema: borsh.Schema, value: any): Uint8Array {
@@ -249,4 +258,57 @@ export async function fetchAllDeals(connection: Connection, programId: PublicKey
 		}
 	}
 	return out;
+}
+
+export type ReviewAccount = {
+	user: Uint8Array;
+	deal: Uint8Array;
+	rating: number;
+	comment: string;
+	created_at: bigint;
+};
+
+export function ixAddReview(programId: PublicKey, user: PublicKey, merchantPda: PublicKey, dealPda: PublicKey, reviewPda: PublicKey, dealId: bigint, rating: number, comment: string) {
+	const data = Buffer.concat([Buffer.from([IX.AddReview]), serialize(schemas.AddReviewArgs as any, { deal_id: dealId, rating, comment })]);
+	return new TransactionInstruction({
+		programId,
+		keys: [
+			{ pubkey: user, isSigner: true, isWritable: true },
+			{ pubkey: merchantPda, isSigner: false, isWritable: false },
+			{ pubkey: dealPda, isSigner: false, isWritable: false },
+			{ pubkey: reviewPda, isSigner: false, isWritable: true },
+			{ pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+		],
+		data,
+	});
+}
+
+export async function fetchReview(connection: Connection, reviewPda: PublicKey): Promise<ReviewAccount | null> {
+	const info = await connection.getAccountInfo(reviewPda);
+	if (!info?.data) return null;
+	try {
+		const decoded = deserialize<ReviewAccount>(schemas.Review as any, info.data);
+		return decoded;
+	} catch {
+		return null;
+	}
+}
+
+export async function fetchReviewsForDeal(connection: Connection, programId: PublicKey, dealPda: PublicKey): Promise<Array<{ pubkey: PublicKey; account: ReviewAccount }>> {
+	const accounts = await connection.getProgramAccounts(programId, { commitment: 'confirmed' });
+	const out: Array<{ pubkey: PublicKey; account: ReviewAccount }> = [];
+	for (const acc of accounts) {
+		try {
+			const decoded = deserialize<ReviewAccount>(schemas.Review as any, acc.account.data);
+			// Filter by deal PDA
+			const dealBytes = dealPda.toBytes();
+			if (Buffer.from(decoded.deal).equals(Buffer.from(dealBytes))) {
+				out.push({ pubkey: acc.pubkey, account: decoded });
+			}
+		} catch (e) {
+			// not a Review account; skip
+		}
+	}
+	// Sort by created_at descending (newest first)
+	return out.sort((a, b) => Number(b.account.created_at - a.account.created_at));
 }
