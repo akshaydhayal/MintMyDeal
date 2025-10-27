@@ -16,6 +16,8 @@ pub enum DealInstruction {
 		discount_percent: u8,
 		expiry: i64,
 		total_supply: u32,
+		image_uri: String,
+		metadata_uri: String,
 	},
 	// 2
 	MintCouponNft { deal_id: u64 },

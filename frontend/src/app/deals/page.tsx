@@ -5,8 +5,8 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { deriveDealPda, deriveMerchantPda, fetchAllDeals, fetchMerchant, ixCreateDeal, ixMintCoupon, ixVerifyAndCountMint, type DealAccount, type MerchantAccount } from '@/lib/solana/instructions';
 import { useUmi } from '@/lib/umi/client';
-import { mintCoreAsset } from '@/lib/umi/mint';
-import { mintTokenMetadataNft } from '@/lib/umi/mint';
+import { generateSigner, percentAmount } from '@metaplex-foundation/umi';
+import { createNft } from '@metaplex-foundation/mpl-token-metadata';
 
 export default function DealsPage() {
 	const { connection } = useConnection();
@@ -29,6 +29,7 @@ export default function DealsPage() {
 	const [deals, setDeals] = useState<Array<{ pubkey: string; account: DealAccount }>>([]);
 	const [loading, setLoading] = useState(true);
 	const [errorMsg, setErrorMsg] = useState<string | null>(null);
+	const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 
 	useEffect(() => {
 		let mounted = true;
@@ -53,31 +54,84 @@ export default function DealsPage() {
 	const onCreate = useCallback(async (formData: FormData) => {
 		if (!publicKey || !signTransaction || !programId) { setErrorMsg('Connect wallet and configure program id'); return; }
 		setCreating(true);
+		setUploadStatus(null);
+		setErrorMsg(null);
 		try {
+			// Check if merchant is registered
+			setUploadStatus('📋 Checking merchant registration...');
+			const merchantPda = deriveMerchantPda(programId, publicKey);
+			const merchantAcc = await fetchMerchant(connection, merchantPda);
+			if (!merchantAcc) {
+				throw new Error('You must register as a merchant first! Go to /merchant page to register.');
+			}
+			
+			// Auto-calculate next deal ID
+			const dealId = BigInt(merchantAcc.total_deals + 1);
+			setUploadStatus(`✨ Creating Deal #${dealId}...`);
+			
 			const title = String(formData.get('title') || '');
 			const description = String(formData.get('description') || '');
 			const discount = Number(formData.get('discount') || 0);
 			const total = Number(formData.get('total') || 1);
 			const expiry = BigInt(Math.floor(Date.now() / 1000) + 86400);
-			const dealId = BigInt(Number(formData.get('dealId') || 1));
+			const imageFile = formData.get('image') as File | null;
+			
 			if (!title) throw new Error('Title is required');
+			if (!imageFile) throw new Error('NFT image is required');
 
-			const merchantPda = deriveMerchantPda(programId, publicKey);
+			// Upload image and metadata once for the entire deal
+			setUploadStatus('📤 Uploading image to Irys/Arweave...');
+			console.log('🚀 Uploading NFT image and metadata for deal...');
+			const uploadFormData = new FormData();
+			uploadFormData.append('name', title);
+			uploadFormData.append('description', description);
+			uploadFormData.append('image', imageFile);
+			
+			const uploadRes = await fetch('/api/irys-upload', {
+				method: 'POST',
+				body: uploadFormData,
+			});
+			
+			if (!uploadRes.ok) {
+				const err = await uploadRes.json();
+				throw new Error(`Upload failed: ${err.error || uploadRes.status}`);
+			}
+			
+			const { imageUri, metadataUri } = await uploadRes.json();
+			setUploadStatus('✅ Upload complete! Creating deal on-chain...');
+			console.log('✅ Uploaded - Image:', imageUri, 'Metadata:', metadataUri);
+
 			const dealPda = deriveDealPda(programId, publicKey, dealId);
-			const ix = ixCreateDeal(programId, publicKey, merchantPda, dealPda, { deal_id: dealId, title, description, discount_percent: discount, expiry, total_supply: total });
+			const ix = ixCreateDeal(programId, publicKey, merchantPda, dealPda, {
+				deal_id: dealId,
+				title,
+				description,
+				discount_percent: discount,
+				expiry,
+				total_supply: total,
+				image_uri: imageUri || '',
+				metadata_uri: metadataUri,
+			});
 			const tx = new Transaction().add(ix);
 			tx.feePayer = publicKey;
 			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 			const signed = await signTransaction(tx);
 			const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false, preflightCommitment: 'confirmed' });
+			
+			setUploadStatus('⏳ Confirming transaction...');
 			await connection.confirmTransaction(sig, 'confirmed');
+			
+			setUploadStatus('🎉 Deal created successfully!');
 			setErrorMsg(null);
 			const list = await fetchAllDeals(connection, programId);
 			setDeals(list.map(d => ({ pubkey: d.pubkey.toBase58(), account: d.account })));
-			alert(`Deal created: ${sig}`);
+			
+			setTimeout(() => setUploadStatus(null), 3000); // Clear success message after 3s
+			alert(`✅ Deal #${dealId} created successfully!\n\n📸 Image: ${imageUri}\n📄 Metadata: ${metadataUri}\n🔗 Tx: ${sig}`);
 		} catch (e: any) {
 			console.error('create deal error', e);
 			setErrorMsg(e?.message || 'Transaction failed');
+			setUploadStatus(null);
 		} finally {
 			setCreating(false);
 		}
@@ -90,21 +144,61 @@ export default function DealsPage() {
 			const dealId = BigInt(Number(formData.get('dealId') || 1));
 			const deal = deals.find(d => BigInt(d.account.deal_id as any) === dealId);
 			if (!deal) throw new Error('Deal not found in list');
+			
+			// Check if deal has reached mint limit
+			const minted = deal.account.minted as number;
+			const totalSupply = deal.account.total_supply as number;
+			if (minted >= totalSupply) {
+				throw new Error(`Mint limit reached: ${minted}/${totalSupply} NFTs already minted`);
+			}
+			
 			const title = deal.account.title;
-			const description = deal.account.description;
-			const imageFile = formData.get('image') as File | null;
+			const metadataUri = deal.account.metadata_uri;
+			
+			if (!metadataUri) {
+				throw new Error('Deal metadata URI not found. Please recreate the deal with an NFT image.');
+			}
 
-			// Mint Token Metadata NFT to ensure full metadata support
-			const minted = await mintTokenMetadataNft(umi, title, description, imageFile || undefined);
+			// Mint Token Metadata NFT using stored metadata URI (no upload needed!)
+			console.log('🎨 Minting NFT using pre-uploaded metadata:', metadataUri);
+			const mint = generateSigner(umi);
+			await createNft(umi, {
+				mint,
+				name: title,
+				symbol: 'DEAL',
+				uri: metadataUri,
+				sellerFeeBasisPoints: percentAmount(0),
+				isMutable: true,
+			}).sendAndConfirm(umi);
+			
+			const mintPubkey = new PublicKey(mint.publicKey.toString());
+			console.log('✅ NFT minted:', mintPubkey.toBase58());
+			
+			// Call VerifyAndCountMint to increment on-chain counter
+			const merchantPubkey = new PublicKey(deal.account.merchant);
+			const merchantPda = deriveMerchantPda(programId, merchantPubkey);
+			const dealPda = deriveDealPda(programId, merchantPubkey, dealId);
+			const ix = ixVerifyAndCountMint(programId, publicKey, merchantPda, dealPda, dealId, mintPubkey);
+			const tx = new Transaction().add(ix);
+			tx.feePayer = publicKey;
+			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+			const signed = await signTransaction(tx);
+			const sig = await connection.sendRawTransaction(signed.serialize());
+			await connection.confirmTransaction(sig, 'confirmed');
+			
 			setErrorMsg(null);
-			alert(`NFT created: ${minted.mint}`);
+			alert(`NFT minted and counted!\nMint: ${mintPubkey.toBase58()}\nVerify Tx: ${sig}`);
+			
+			// Refresh deals list to show updated count
+			const list = await fetchAllDeals(connection, programId);
+			setDeals(list.map(d => ({ pubkey: d.pubkey.toBase58(), account: d.account })));
 		} catch (e: any) {
 			console.error('mint error', e);
 			setErrorMsg(e?.message || 'Transaction failed');
 		} finally {
 			setMinting(false);
 		}
-	}, [publicKey, signTransaction, programId, umi, deals]);
+	}, [publicKey, signTransaction, programId, umi, deals, connection]);
 
 	return (
 		<div className="space-y-8">
@@ -118,6 +212,12 @@ export default function DealsPage() {
 			{errorMsg && (
 				<div className="rounded border border-yellow-800 bg-yellow-950/50 text-yellow-200 px-3 py-2">
 					{errorMsg}
+				</div>
+			)}
+			{uploadStatus && (
+				<div className="rounded border border-blue-800 bg-blue-950/50 text-blue-200 px-3 py-2 flex items-center gap-2">
+					{uploadStatus.includes('...') && <span className="animate-pulse">●</span>}
+					{uploadStatus}
 				</div>
 			)}
 
@@ -159,14 +259,13 @@ export default function DealsPage() {
 			</section>
 
 			<form action={onCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg border border-neutral-800 p-4">
-				<div className="col-span-1 md:col-span-2 font-medium">Create Deal</div>
-				<label className="space-y-1">
-					<span className="text-sm text-neutral-400">Deal ID</span>
-					<input name="dealId" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={1} />
-				</label>
+				<div className="col-span-1 md:col-span-2">
+					<div className="font-medium">Create Deal (Auto-Numbered)</div>
+					<div className="text-xs text-neutral-400 mt-1">Deal ID will be automatically assigned based on your total deals</div>
+				</div>
 				<label className="space-y-1">
 					<span className="text-sm text-neutral-400">Title</span>
-					<input name="title" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" placeholder="10% Off" />
+					<input name="title" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" placeholder="10% Off Pizza" required />
 				</label>
 				<label className="space-y-1">
 					<span className="text-sm text-neutral-400">Description</span>
@@ -180,22 +279,23 @@ export default function DealsPage() {
 					<span className="text-sm text-neutral-400">Total Supply</span>
 					<input name="total" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={2} />
 				</label>
-				<div className="col-span-1 md:grid-cols-2">
-					<button disabled={creating} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{creating ? 'Creating…' : 'Create'}</button>
+				<label className="space-y-1 col-span-1 md:col-span-2">
+					<span className="text-sm text-neutral-400">NFT Image (Required - uploaded once for all mints)</span>
+					<input name="image" type="file" accept="image/*" className="w-full text-sm" required />
+				</label>
+				<div className="col-span-1 md:col-span-2">
+					<button disabled={creating} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{creating ? 'Creating & Uploading…' : 'Create Deal'}</button>
 				</div>
 			</form>
 
 			<form action={onMint} className="rounded-lg border border-neutral-800 p-4 space-y-3">
-				<div className="font-medium">Mint Coupon Asset (Core)</div>
+				<div className="font-medium">Mint Coupon NFT (Uses Pre-Uploaded Metadata)</div>
+				<p className="text-sm text-neutral-400">No image upload needed - metadata is reused from the deal!</p>
 				<label className="space-y-1 block">
 					<span className="text-sm text-neutral-400">Deal ID</span>
 					<input name="dealId" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={1} />
 				</label>
-				<label className="space-y-1 block">
-					<span className="text-sm text-neutral-400">Image (optional)</span>
-					<input name="image" type="file" accept="image/*" className="w-full text-sm" />
-				</label>
-				<button disabled={minting} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{minting ? 'Minting…' : 'Mint Asset'}</button>
+				<button disabled={minting} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{minting ? 'Minting…' : 'Mint NFT'}</button>
 			</form>
 		</div>
 	)

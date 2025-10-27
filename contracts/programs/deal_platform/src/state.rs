@@ -36,11 +36,13 @@ pub struct Deal {
 	pub expiry: i64,
 	pub total_supply: u32,
 	pub minted: u32,
+	pub image_uri: String,
+	pub metadata_uri: String,
 }
 
 impl Deal {
 	pub fn space() -> usize {
-		8 + 32 + 4 + MAX_TITLE_LEN + 4 + MAX_DESC_LEN + 1 + 8 + 4 + 4
+		8 + 32 + 4 + MAX_TITLE_LEN + 4 + MAX_DESC_LEN + 1 + 8 + 4 + 4 + 4 + MAX_URI_LEN + 4 + MAX_URI_LEN
 	}
 }
 

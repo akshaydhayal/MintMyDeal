@@ -22,6 +22,8 @@ const schemas = {
 			discount_percent: 'u8',
 			expiry: 'i64',
 			total_supply: 'u32',
+			image_uri: 'string',
+			metadata_uri: 'string',
 		},
 	},
 	MintCouponArgs: { struct: { deal_id: 'u64' } },
@@ -50,6 +52,8 @@ const schemas = {
 			expiry: 'i64',
 			total_supply: 'u32',
 			minted: 'u32',
+			image_uri: 'string',
+			metadata_uri: 'string',
 		},
 	},
 } as const;
@@ -110,7 +114,22 @@ export function ixSetCollectionMint(programId: PublicKey, payer: PublicKey, merc
 	});
 }
 
-export function ixCreateDeal(programId: PublicKey, payer: PublicKey, merchantPda: PublicKey, dealPda: PublicKey, args: { deal_id: bigint; title: string; description: string; discount_percent: number; expiry: bigint; total_supply: number; }) {
+export function ixCreateDeal(
+	programId: PublicKey,
+	payer: PublicKey,
+	merchantPda: PublicKey,
+	dealPda: PublicKey,
+	args: {
+		deal_id: bigint;
+		title: string;
+		description: string;
+		discount_percent: number;
+		expiry: bigint;
+		total_supply: number;
+		image_uri: string;
+		metadata_uri: string;
+	}
+) {
 	const data = Buffer.concat([Buffer.from([IX.CreateDeal]), serialize(schemas.CreateDealArgs as any, args)]);
 	return new TransactionInstruction({
 		programId,
@@ -188,6 +207,8 @@ export type DealAccount = {
 	expiry: bigint;
 	total_supply: number;
 	minted: number;
+	image_uri: string;
+	metadata_uri: string;
 };
 
 export type MerchantAccount = {
