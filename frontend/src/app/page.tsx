@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useWallet } from '@solana/wallet-adapter-react';
-import Link from 'next/link';
+import { Loader } from '@/components/Loader';
 
 export default function HomePage() {
 	const { connected } = useWallet();
@@ -16,14 +16,11 @@ export default function HomePage() {
 		}
 	}, [connected, router]);
 
-	// Show landing page only if wallet is NOT connected
+	// Show loader if wallet is connected (during redirect)
 	if (connected) {
 		return (
 			<div className="flex items-center justify-center min-h-[60vh]">
-				<div className="text-center">
-					<div className="text-4xl mb-4 animate-pulse">🚀</div>
-					<div className="text-xl text-neutral-300">Redirecting to deals...</div>
-				</div>
+				<Loader size="lg" text="Redirecting to deals..." />
 			</div>
 		);
 	}

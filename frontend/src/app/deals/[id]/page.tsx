@@ -11,6 +11,7 @@ import { createNft } from '@metaplex-foundation/mpl-token-metadata';
 import { useToast } from '@/lib/toast/ToastContext';
 import { parseContractError, getShortTxSignature, getExplorerUrl } from '@/lib/solana/errors';
 import Link from 'next/link';
+import { Loader, Skeleton } from '@/components/Loader';
 
 export default function DealDetailPage() {
 	const params = useParams();
@@ -252,11 +253,27 @@ export default function DealDetailPage() {
 
 	if (loading) {
 		return (
-			<div className="flex items-center justify-center min-h-[60vh]">
-				<div className="text-center">
-					<div className="text-4xl mb-4 animate-pulse">⏳</div>
-					<div className="text-xl text-neutral-300">Loading deal...</div>
+			<div className="space-y-6">
+				<Skeleton className="h-8 w-32" />
+				<div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+					{/* Image skeleton */}
+					<div className="rounded-lg overflow-hidden">
+						<Skeleton className="aspect-video w-full h-64" />
+					</div>
+					{/* Info skeleton */}
+					<div className="space-y-4">
+						<Skeleton className="h-10 w-3/4" />
+						<Skeleton className="h-6 w-1/4" />
+						<Skeleton className="h-20 w-full" />
+						<Skeleton className="h-4 w-full" />
+						<Skeleton className="h-4 w-full" />
+						<Skeleton className="h-4 w-3/4" />
+						<div className="pt-4">
+							<Skeleton className="h-12 w-full" />
+						</div>
+					</div>
 				</div>
+				<Skeleton className="h-64 w-full" />
 			</div>
 		);
 	}
