@@ -308,7 +308,7 @@ export default function RedeemPage() {
 							<li>• Your NFT will be <strong>permanently burned</strong> (destroyed)</li>
 							<li>• A redemption log will be created on-chain as proof</li>
 							<li>• Show the transaction signature to the merchant</li>
-							<li>• Each NFT can only be redeemed <strong>once</strong></li>
+							{/* <li>• Each NFT can only be redeemed <strong>once</strong></li> */}
 						</ul>
 					</div>
 				</div>
