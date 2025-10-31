@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
@@ -32,6 +32,10 @@ export default function DealDetailPage() {
 	const [newRating, setNewRating] = useState(5);
 	const [newComment, setNewComment] = useState('');
 	const [userReview, setUserReview] = useState<{ pubkey: PublicKey; account: ReviewAccount } | null>(null);
+
+	// Use refs to prevent duplicate transaction execution (atomic check)
+	const isMintingRef = useRef(false);
+	const isSubmittingReviewRef = useRef(false);
 
 	const dealPubkeyStr = params.id as string; // This is now the PDA address, not deal_id
 
@@ -113,6 +117,9 @@ export default function DealDetailPage() {
 			return;
 		}
 
+		// Atomic check: prevent duplicate submissions using ref (doesn't depend on re-render)
+		if (isSubmittingReviewRef.current) return;
+		isSubmittingReviewRef.current = true;
 		setSubmittingReview(true);
 		let toastId: string | null = null;
 
@@ -163,6 +170,7 @@ export default function DealDetailPage() {
 			}
 		} finally {
 			setSubmittingReview(false);
+			isSubmittingReviewRef.current = false;
 		}
 	}, [publicKey, signTransaction, deal, newRating, newComment, connection, programId, showToast, updateToast]);
 
@@ -180,6 +188,9 @@ export default function DealDetailPage() {
 			return;
 		}
 
+		// Atomic check: prevent duplicate submissions using ref (doesn't depend on re-render)
+		if (isMintingRef.current) return;
+		isMintingRef.current = true;
 		setMinting(true);
 		let toastId: string | null = null;
 
@@ -248,6 +259,7 @@ export default function DealDetailPage() {
 			}
 		} finally {
 			setMinting(false);
+			isMintingRef.current = false;
 		}
 	}, [publicKey, signTransaction, deal, dealPubkeyStr, umi, connection, programId, showToast, updateToast]);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { deriveDealPda, deriveMerchantPda, fetchMerchant, fetchAllDeals, ixCreateDeal, ixRegisterMerchant, type MerchantAccount, type DealAccount } from '@/lib/solana/instructions';
@@ -22,6 +22,10 @@ export default function MerchantPage() {
 	const [loadingDeals, setLoadingDeals] = useState(false);
 	const [showCreateModal, setShowCreateModal] = useState(false);
 	const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+
+	// Use refs to prevent duplicate transaction execution (atomic check)
+	const isRegisteringRef = useRef(false);
+	const isCreatingRef = useRef(false);
 
 	const merchantPda = useMemo(() => (publicKey ? deriveMerchantPda(programId, publicKey) : null), [programId, publicKey]);
 
@@ -80,6 +84,9 @@ export default function MerchantPage() {
 
 	const onRegister = useCallback(async (formData: FormData) => {
 		if (!publicKey || !signTransaction) return;
+		// Atomic check: prevent duplicate submissions using ref (doesn't depend on re-render)
+		if (isRegisteringRef.current) return;
+		isRegisteringRef.current = true;
 		setLoading(true);
 		const toastId = showToast('loading', 'Registering merchant...', 'Preparing transaction');
 		try {
@@ -111,6 +118,7 @@ export default function MerchantPage() {
 			updateToast(toastId, { type: 'error', title: 'Registration Failed', message: errorMsg, duration: 10000 });
 		} finally {
 			setLoading(false);
+			isRegisteringRef.current = false;
 		}
 	}, [publicKey, signTransaction, connection, programId, showToast, updateToast]);
 
@@ -119,6 +127,9 @@ export default function MerchantPage() {
 			showToast('error', 'Wallet Not Connected', 'Please connect your wallet and try again');
 			return;
 		}
+		// Atomic check: prevent duplicate submissions using ref (doesn't depend on re-render)
+		if (isCreatingRef.current) return;
+		isCreatingRef.current = true;
 		setCreating(true);
 		setErrorMsg(null);
 		setUploadStatus(null);
@@ -144,8 +155,21 @@ export default function MerchantPage() {
 			const description = String(formData.get('description') || '');
 			const discount = Number(formData.get('discount') || 0);
 			const total = Number(formData.get('total') || 1);
-			const expiry = BigInt(Math.floor(Date.now() / 1000) + 86400);
+			const expiryInput = String(formData.get('expiry') || '');
 			const imageFile = formData.get('image') as File | null;
+			
+			if (!expiryInput) throw new Error('Expiry date is required');
+			
+			// Convert datetime-local input to Unix timestamp (seconds)
+			const expiryDate = new Date(expiryInput);
+			if (isNaN(expiryDate.getTime())) throw new Error('Invalid expiry date');
+			
+			// Check if expiry is in the future
+			if (expiryDate.getTime() <= Date.now()) {
+				throw new Error('Expiry date must be in the future');
+			}
+			
+			const expiry = BigInt(Math.floor(expiryDate.getTime() / 1000));
 			
 			if (!title) throw new Error('Title is required');
 			if (!imageFile) throw new Error('NFT image is required');
@@ -245,6 +269,7 @@ export default function MerchantPage() {
 			}
 		} finally {
 			setCreating(false);
+			isCreatingRef.current = false;
 		}
 	}, [publicKey, signTransaction, connection, programId, showToast, updateToast, fetchMerchantDeals]);
 
@@ -579,6 +604,20 @@ export default function MerchantPage() {
 										required
 										disabled={creating}
 									/>
+								</label>
+								<label className="space-y-2">
+									<span className="text-sm text-purple-300">Expiry Date & Time <span className="text-red-400">*</span></span>
+									<input 
+										name="expiry" 
+										type="datetime-local" 
+										className="w-full bg-neutral-800 border border-purple-800 rounded px-3 py-2 text-white focus:outline-none focus:border-purple-600 disabled:opacity-50" 
+										required
+										disabled={creating}
+										min={new Date().toISOString().slice(0, 16)}
+									/>
+									<div className="text-xs text-purple-300/50 mt-1">
+										Select when this deal should expire. Users won't be able to mint after this date.
+									</div>
 								</label>
 								<label className="space-y-2 col-span-1 md:col-span-2">
 									<span className="text-sm text-purple-300">NFT Image <span className="text-red-400">*</span></span>

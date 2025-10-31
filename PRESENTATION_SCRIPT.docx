@@ -1,0 +1,185 @@
+# 🎤 Monke Deals - Presentation Script (1.5 Minutes)
+
+---
+
+## 📝 Script
+
+**[Opening - 15 seconds]**
+
+"Hey everyone! I'm excited to present **Monke Deals** - a Web3-powered deal discovery and loyalty platform built on Solana. Think Groupon, but completely decentralized and user-owned. 
+
+**[Problem Statement - 10 seconds]**
+
+Traditional deal platforms keep you locked in. When you buy a coupon, you can't transfer it or trade it. We're changing that with NFTs.
+
+**[Solution & Features - 50 seconds]**
+
+**For Merchants:**
+- Register once, create unlimited deals
+- Set discount percentages, expiry dates, and mint limits
+- Each deal automatically mints NFT coupons when users claim them
+
+**For Users:**
+- Browse deals from verified merchants
+- Mint NFT coupons with one click - you truly own them
+- Transfer, trade, or sell your coupons on our built-in marketplace
+- Redeem directly at merchants, which burns the NFT
+- Rate and review deals to help the community
+
+**The Marketplace:**
+- Fixed-price listings - simple and secure
+- Escrow system holds NFTs until sale completes
+- Buyers get instant ownership, sellers get SOL
+
+**[Tech Stack - 20 seconds]**
+
+Built entirely on Solana:
+- Native Rust program for on-chain logic
+- Metaplex for NFT standards
+- Next.js frontend with TypeScript
+- Irys for decentralized metadata storage
+- One unified contract handles everything - merchants, deals, NFTs, and marketplace
+
+**[Closing - 15 seconds]**
+
+Monke Deals proves that loyalty programs can be user-owned, tradeable, and decentralized. No middlemen, full transparency, complete ownership. 
+
+Thanks for listening!"
+
+---
+
+## ⏱️ Timing Breakdown
+
+| Section | Duration | Words |
+|---------|----------|-------|
+| Opening | 15 sec | ~40 words |
+| Problem | 10 sec | ~25 words |
+| Solution & Features | 50 sec | ~130 words |
+| Tech Stack | 20 sec | ~40 words |
+| Closing | 15 sec | ~30 words |
+| **TOTAL** | **110 sec** | **~265 words** |
+
+*Note: Actual speaking may vary. Adjust pace as needed. Target: ~130-150 words per minute.*
+
+---
+
+## 🎯 Key Points to Emphasize
+
+### ✅ Unique Value Propositions:
+1. **User Ownership** - "You own your coupons as NFTs"
+2. **Transferable** - "Trade or sell if plans change"
+3. **Decentralized** - "No middlemen, full transparency"
+4. **All-in-One** - "Marketplace, deals, and loyalty in one platform"
+
+### 🔑 Technical Highlights:
+- Built on Solana (fast, cheap)
+- Native Rust program (secure, efficient)
+- Unified contract (simpler deployment)
+- Metaplex NFT standard (interoperable)
+
+---
+
+## 🎬 Demo Flow Suggestions
+
+**While presenting, you can:**
+1. Show the home page → deals page
+2. Quick demo: Browse deals → Mint an NFT coupon
+3. Show: Redeem page with owned NFTs
+4. Show: Marketplace with listings
+5. Emphasize: "One platform, complete ownership"
+
+---
+
+## 💡 Presentation Tips
+
+### **Do:**
+- ✅ Speak clearly and at a moderate pace
+- ✅ Pause for emphasis on key features
+- ✅ Use gestures to show "ownership" and "transfer"
+- ✅ Highlight "one unified contract" as a technical strength
+
+### **Emphasize:**
+- "User-owned" - repeat this concept
+- "Transferable" - show you can trade/sell
+- "Decentralized" - no central authority
+- "Built on Solana" - fast blockchain
+
+### **Avoid:**
+- ❌ Rushing through technical details
+- ❌ Using too much jargon
+- ❌ Skipping the problem statement
+- ❌ Not mentioning the marketplace feature
+
+---
+
+## 📊 Alternative Shorter Version (1 minute)
+
+If you need a 1-minute version, use this condensed script:
+
+---
+
+**[Opening - 10 seconds]**
+"Monke Deals is Groupon for Web3 - a Solana-based deal discovery platform where coupons are NFTs you truly own."
+
+**[Features - 35 seconds]**
+"Merchants create deals that mint NFT coupons. Users mint, own, and can transfer or sell these coupons. Our built-in marketplace lets users trade coupons peer-to-peer. When you redeem, the NFT is burned - permanent proof of use."
+
+**[Tech - 10 seconds]**
+"One unified Solana program handles everything: merchant registration, deal creation, NFT minting, marketplace listings, and redemption."
+
+**[Closing - 5 seconds]**
+"Loyalty meets Web3. Own your deals. Trade your coupons. Welcome to the future of loyalty programs. Thank you!"
+
+---
+
+## 🎤 Practice Notes
+
+- **Rehearse** 3-5 times to get comfortable
+- **Time yourself** - adjust pace to hit 1.5 minutes
+- **Mark pauses** - use commas for natural breaks
+- **Highlight keywords** in your notes for emphasis:
+  - User-owned
+  - Transferable
+  - Decentralized
+  - Solana
+  - Marketplace
+  - NFT
+
+---
+
+## 📝 Speaker Notes Format
+
+Print this for easy reference during the presentation:
+
+```
+Monke Deals - 1.5 Min Script
+═══════════════════════════════════════════
+
+[15s] OPENING
+"Hey everyone! Monke Deals - Web3 Groupon on Solana..."
+
+[10s] PROBLEM
+"Traditional coupons locked in, not transferable..."
+
+[50s] FEATURES
+- Merchants: register, create deals, set limits
+- Users: browse, mint NFTs, own them
+- Transfer/sell on marketplace
+- Redeem burns NFT
+- Rate & review
+
+[20s] TECH
+"Solana + Rust + Next.js + Metaplex + Irys
+ One unified contract - everything in one!"
+
+[15s] CLOSING
+"User-owned, tradeable, decentralized. No middlemen!"
+
+═══════════════════════════════════════════
+Total: ~110 seconds (1.5 min)
+```
+
+---
+
+Good luck with your presentation! 🚀🎤
+
