@@ -1,8 +1,6 @@
-# 🐵 Monke Deals - Web3 Loyalty Platform on Solana
+# 🐵 Mint My Deals - Web3 Loyalty Platform on Solana
 
-[![Solana](https://img.shields.io/badge/Built%20on-Solana-9945FF?style=for-the-badge&logo=solana&logoColor=white)](https://solana.com)
-[![Next.js](https://img.shields.io/badge/Next.js-13-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+Live Project Link: [https://mint-my-deal.vercel.app/](https://mint-my-deal.vercel.app/)
 
 **Monke Deals** is a decentralized deal discovery and loyalty platform built on Solana where merchants create NFT-based coupons that users can mint, own, transfer, trade on our marketplace, or redeem at merchants.
 
@@ -66,40 +64,42 @@ Monke Deals revolutionizes traditional loyalty programs by transforming coupons 
 ## 📸 Screenshots
 
 ### Homepage / Deals Discovery
-![Deals Discovery Page](screenshots/deals-discovery.png)
+![Deals Discovery Page](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/home%20page.png)
 *Browse active and expired deals with our intuitive tab-based interface*
 
 ### Merchant Dashboard
-![Merchant Dashboard](screenshots/merchant-dashboard.png)
+![Merchant Dashboard](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/merchant%20register.png)
+*Merchant Registration*
+
+![Merchant Dashboard](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/merchant%20page.png)
 *Merchants can create unlimited deals with detailed configuration options*
 
 ### Deal Creation Modal
-![Create Deal Modal](screenshots/create-deal-modal.png)
+![Create Deal Modal](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/create%20deal.png)
 *Create deals with images, discounts, supply limits, and expiry dates*
 
-### NFT Minting
-![NFT Minting](screenshots/nft-minting.png)
-*Seamless NFT minting process with real-time deal status updates*
+### Deal Detail Page
+![Deal Details](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/deal%20page.png)
+*View deal information, mint coupons, and read reviews*
+
+### Marketplace
+![Marketplace](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/marketplace%20page.png)
+*Browse and purchase NFT coupons from other users*
+
+### NFT Listing Modal
+![NFT Minting](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/list%20nft.png)
+*Seamless NFT Listing Modal*
 
 ### Redeem Page
-![Redeem NFTs](screenshots/redeem-page.png)
+![Redeem NFTs](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/redeem%20page.png)
 *View all your NFT coupons and redeem them with one click*
 
 ### Redemption Success Modal
-![Redemption Success](screenshots/redemption-success.png)
+![Redemption Success](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/nft%20redeem.png)
 *Clear redemption confirmation with coupon code and transaction proof*
 
-### Marketplace
-![Marketplace](screenshots/marketplace.png)
-*Browse and purchase NFT coupons from other users*
-
-### Deal Detail Page
-![Deal Details](screenshots/deal-detail.png)
-*View deal information, mint coupons, and read reviews*
 
 ---
-
-**Note:** Replace the placeholder image paths above with actual screenshots of your application.
 
 ## 🎥 Demo Video
 
