@@ -9,7 +9,8 @@ export function Navbar() {
 			<div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
 				<div className="flex items-center gap-8">
 					<Link href="/" className="font-bold text-xl hover:text-neutral-300 transition-colors">
-						🐵 Monke Deals
+						{/* 🐵 Monke Deals */}
+						🐵 ListMyDeals
 					</Link>
 					<nav className="hidden md:flex items-center gap-6">
 						<Link href="/deals" className="text-sm text-neutral-400 hover:text-white transition-colors">

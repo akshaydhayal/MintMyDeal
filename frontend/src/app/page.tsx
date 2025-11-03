@@ -31,7 +31,7 @@ export default function HomePage() {
 			<div className="text-center space-y-6">
 				<div className="text-6xl mb-4">🐵</div>
 				<h1 className="text-5xl font-bold bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-					Monke Deals
+					List My Deals
 				</h1>
 				<p className="text-2xl text-neutral-300 max-w-2xl mx-auto">
 					Web3 Deal Discovery Platform
@@ -137,7 +137,7 @@ export default function HomePage() {
 				</div>
 
 				<div className="rounded-lg border border-neutral-800 p-6 bg-neutral-900/30">
-					<h4 className="text-lg font-medium mb-4 text-neutral-200">🎯 Why Monke Deals?</h4>
+					<h4 className="text-lg font-medium mb-4 text-neutral-200">🎯 Why ListMyDeals?</h4>
 					<ul className="space-y-3 text-sm text-neutral-400">
 						<li className="flex items-start gap-2">
 							<span className="text-blue-400 mt-0.5">→</span>
