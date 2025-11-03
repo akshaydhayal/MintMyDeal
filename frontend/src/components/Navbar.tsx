@@ -10,14 +10,14 @@ export function Navbar() {
 				<div className="flex items-center gap-8">
 					<Link href="/" className="font-bold text-xl hover:text-neutral-300 transition-colors">
 						{/* 🐵 Monke Deals */}
-						🐵 ListMyDeals
+						🐵 MintMyDeals
 					</Link>
 					<nav className="hidden md:flex items-center gap-6">
 						<Link href="/deals" className="text-sm text-neutral-400 hover:text-white transition-colors">
 							Browse Deals
 						</Link>
 						<Link href="/marketplace" className="text-sm text-neutral-400 hover:text-white transition-colors">
-							🛒 Marketplace
+							🛒 NFT Coupons Marketplace
 						</Link>
 						<Link href="/merchant" className="text-sm text-neutral-400 hover:text-white transition-colors">
 							Merchant Dashboard

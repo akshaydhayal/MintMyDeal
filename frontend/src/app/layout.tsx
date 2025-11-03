@@ -6,7 +6,7 @@ import { ToastProvider } from '@/lib/toast/ToastContext'
 import { Navbar } from '@/components/Navbar'
 
 export const metadata: Metadata = {
-	title: 'List My Deals',
+	title: 'Mint My Deals',
 	description: 'Web3 Deal Discovery & Loyalty Platform',
 }
 
