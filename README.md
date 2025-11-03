@@ -2,7 +2,7 @@
 
 Live Project Link: [https://mint-my-deal.vercel.app/](https://mint-my-deal.vercel.app/)
 
-**Monke Deals** is a decentralized deal discovery and loyalty platform built on Solana where merchants create NFT-based coupons that users can mint, own, transfer, trade on our marketplace, or redeem at merchants.
+**MintMyDeals** is a decentralized deal discovery and loyalty platform built on Solana where merchants create NFT-based coupons that users can mint, own, transfer, trade on our marketplace, or redeem at merchants.
 
 ## 📖 Table of Contents
 
@@ -24,7 +24,7 @@ Live Project Link: [https://mint-my-deal.vercel.app/](https://mint-my-deal.verce
 
 ## 🎯 Overview
 
-Monke Deals revolutionizes traditional loyalty programs by transforming coupons into transferable NFTs on the Solana blockchain. Unlike conventional platforms that lock deals to user accounts, our platform enables:
+MintMyDeals revolutionizes traditional loyalty programs by transforming coupons into transferable NFTs on the Solana blockchain. Unlike conventional platforms that lock deals to user accounts, our platform enables:
 
 - ✅ **True Ownership** - NFTs you truly own in your wallet
 - ✅ **Peer-to-Peer Trading** - Built-in marketplace for trading coupons
