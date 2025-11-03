@@ -104,20 +104,11 @@ Monke Deals revolutionizes traditional loyalty programs by transforming coupons 
 ## 🎥 Demo Video
 
 ### Full Platform Walkthrough
-[![Watch the Demo](https://img.shields.io/badge/▶️-Watch%20Demo%20Video-red?style=for-the-badge)](YOUR_DEMO_VIDEO_LINK)
+[![Watch the Demo](https://img.shields.io/badge/▶️-Watch%20Demo%20Video-red?style=for-the-badge)](https://drive.google.com/file/d/17YiR2Htr5QRS7cTLOMFCmOawBbG_Y0kF/view?usp=sharing)
 
 **Video Description:** Complete walkthrough showing merchant registration, deal creation, user minting, redemption, and marketplace trading.
 
-### Quick Feature Highlights
-- 🎬 [Merchant Flow Demo](YOUR_MERCHANT_DEMO_LINK) - Creating and managing deals
-- 🎬 [User Minting Demo](YOUR_MINTING_DEMO_LINK) - Discovering and minting NFT coupons
-- 🎬 [Redemption Demo](YOUR_REDEMPTION_DEMO_LINK) - Redeeming coupons and receiving codes
-- 🎬 [Marketplace Demo](YOUR_MARKETPLACE_DEMO_LINK) - Trading NFT coupons
-
 ---
-
-**Note:** Replace `YOUR_DEMO_VIDEO_LINK` with actual YouTube, Vimeo, or other video platform links.
-
 ## 🛠 Tech Stack
 
 ### Blockchain
@@ -386,43 +377,10 @@ All accounts use Program Derived Addresses (PDAs) for deterministic address gene
 4. **Redeem**: Click "Redeem" on an NFT to burn it and get coupon code
 5. **Trade**: Click "List NFT" to sell on marketplace, or browse `/marketplace` to buy
 
-## 🤝 Contributing
-
-We welcome contributions! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Follow TypeScript best practices
-- Use meaningful variable and function names
-- Add comments for complex logic
-- Test all transactions on devnet first
-- Update documentation for new features
 
 ## 📝 License
-
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 📧 Contact
-
-- **Project Link**: [https://github.com/yourusername/monke-nft](https://github.com/yourusername/monke-nft)
-- **Website**: [Your Website URL]
-- **Email**: [Your Email]
-- **Twitter/X**: [@YourTwitter]
-- **Discord**: [Your Discord Server]
-
-## 🙏 Acknowledgments
-
-- Solana Foundation for the amazing blockchain infrastructure
-- Metaplex for NFT standards and tooling
-- Anchor team for the excellent framework
-- Irys (formerly Bundlr) for decentralized storage
-- The open-source community
 
 ---
 
