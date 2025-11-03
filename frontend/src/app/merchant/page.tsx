@@ -83,10 +83,18 @@ export default function MerchantPage() {
 	}, [merchantAcc, publicKey, fetchMerchantDeals]);
 
 	const onRegister = useCallback(async (formData: FormData) => {
-		if (!publicKey || !signTransaction) return;
-		// Atomic check: prevent duplicate submissions using ref (doesn't depend on re-render)
-		if (isRegisteringRef.current) return;
+		// Atomic check FIRST - prevent duplicate submissions using ref (doesn't depend on re-render)
+		if (isRegisteringRef.current) {
+			console.log('⚠️ Registration transaction already in progress, ignoring duplicate call');
+			return;
+		}
 		isRegisteringRef.current = true;
+		
+		if (!publicKey || !signTransaction) {
+			isRegisteringRef.current = false;
+			return;
+		}
+		
 		setLoading(true);
 		const toastId = showToast('loading', 'Registering merchant...', 'Preparing transaction');
 		try {
@@ -368,7 +376,10 @@ export default function MerchantPage() {
 						<div className="text-xl font-bold text-green-200 mb-2">🚀 Register as Merchant</div>
 						<p className="text-sm text-green-300/70">Start creating deals by registering your merchant account</p>
 					</div>
-					<form action={onRegister} className="space-y-4">
+					<form onSubmit={(e) => {
+						e.preventDefault();
+						e.stopPropagation();
+					}} className="space-y-4">
 						<label className="space-y-2">
 							<span className="text-sm text-green-300">Merchant Name <span className="text-red-400">*</span></span>
 							<input 
@@ -387,7 +398,21 @@ export default function MerchantPage() {
 							/>
 						</label>
 						<button 
-							disabled={loading} 
+							type="button"
+							onClick={(e) => {
+								e.preventDefault();
+								e.stopPropagation();
+								const form = e.currentTarget.closest('form');
+								if (!form) return;
+								// Additional check before submitting (triple protection)
+								if (isRegisteringRef.current || loading) {
+									console.log('⚠️ Registration already in progress, ignoring click');
+									return;
+								}
+								const formData = new FormData(form);
+								onRegister(formData);
+							}}
+							disabled={loading || isRegisteringRef.current} 
 							className="w-full px-4 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 						>
 							{loading ? 'Registering…' : '✓ Register Merchant'}
@@ -513,13 +538,18 @@ export default function MerchantPage() {
 											</div>
 
 											{/* Expiry Info */}
-											<div className="text-xs text-cyan-300/50">
+											<div className="text-xs text-cyan-300/50 space-y-1">
 												{isExpired ? (
 													<span className="text-yellow-400">⚠️ Expired</span>
 												) : (
-													<span>
-														🕒 Expires {new Date(Number(expiry) * 1000).toLocaleDateString()}
-													</span>
+													<>
+														<div>
+															🕒 Expires {new Date(Number(expiry) * 1000).toLocaleDateString()}
+														</div>
+														<div className="text-cyan-300/60">
+															{new Date(Number(expiry) * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+														</div>
+													</>
 												)}
 											</div>
 										</div>

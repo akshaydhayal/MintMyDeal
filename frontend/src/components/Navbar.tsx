@@ -13,16 +13,16 @@ export function Navbar() {
 					</Link>
 					<nav className="hidden md:flex items-center gap-6">
 						<Link href="/deals" className="text-sm text-neutral-400 hover:text-white transition-colors">
-							Deals
+							Browse Deals
 						</Link>
 						<Link href="/marketplace" className="text-sm text-neutral-400 hover:text-white transition-colors">
 							🛒 Marketplace
 						</Link>
 						<Link href="/merchant" className="text-sm text-neutral-400 hover:text-white transition-colors">
-							Merchant
+							Merchant Dashboard
 						</Link>
 						<Link href="/redeem" className="text-sm text-neutral-400 hover:text-white transition-colors">
-							Redeem
+							Redeem NFT
 						</Link>
 					</nav>
 				</div>
