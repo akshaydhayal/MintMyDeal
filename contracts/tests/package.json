@@ -1,0 +1,17 @@
+{
+  "name": "deal-platform-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:devnet": "bun test --silent src/**/*.test.ts",
+    "test:local": "SOLANA_URL=http://127.0.0.1:8899 bun test --silent src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.95.3",
+    "borsh": "^2.0.0",
+    "bs58": "^6.0.0"
+  },
+  "devDependencies": {
+    "bun-types": "^1.1.31"
+  }
+}

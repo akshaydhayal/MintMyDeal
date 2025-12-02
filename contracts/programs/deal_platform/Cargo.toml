@@ -1,0 +1,29 @@
+[package]
+name = "deal_platform"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+name = "deal_platform"
+crate-type = ["cdylib", "lib"]
+
+[features]
+no-entrypoint = []
+
+[dependencies]
+solana-program = { workspace = true }
+thiserror = { workspace = true }
+thiserror-no-std = { workspace = true }
+borsh = { workspace = true }
+borsh-derive = { workspace = true }
+num-derive = { workspace = true }
+num-traits = { workspace = true }
+
+[dev-dependencies]
+solana-program-test = { workspace = true }
+solana-sdk = { workspace = true }
+solana-logger = { workspace = true }
+
+[package.metadata.docs.rs]
+features = ["no-entrypoint"]
