@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
-import { deriveDealPda, deriveMerchantPda, fetchAllDeals, ixCreateDeal, ixMintCoupon, type DealAccount } from '@/lib/solana/instructions';
+import { deriveDealPda, deriveMerchantPda, fetchAllDeals, fetchMerchant, ixCreateDeal, ixMintCoupon, ixVerifyAndCountMint, type DealAccount, type MerchantAccount } from '@/lib/solana/instructions';
+import { useUmi } from '@/lib/umi/client';
+import { mintCouponNft, uploadImageAndJson } from '@/lib/umi/mint';
 
 export default function DealsPage() {
 	const { connection } = useConnection();
 	const { publicKey, signTransaction } = useWallet();
+	const umi = useUmi();
 	const [programIdError, setProgramIdError] = useState<string | null>(null);
 	const programId = useMemo(() => {
 		try {
@@ -86,7 +89,18 @@ export default function DealsPage() {
 			const dealId = BigInt(Number(formData.get('dealId') || 1));
 			const merchantPda = deriveMerchantPda(programId, publicKey);
 			const dealPda = deriveDealPda(programId, publicKey, dealId);
-			const ix = ixMintCoupon(programId, publicKey, merchantPda, dealPda, dealId);
+			const merchantAcc = await fetchMerchant(connection, merchantPda);
+			if (!merchantAcc) throw new Error('Merchant not found');
+			const collection = new PublicKey(merchantAcc.collection_mint);
+			if (collection.equals(PublicKey.default)) throw new Error('Collection not set');
+
+			// Upload per-coupon JSON (or use a template); mint NFT to user
+			const name = `Deal #${dealId}`;
+			const jsonUri = await umi.uploader.uploadJson({ name, description: 'Coupon NFT', attributes: [{ trait_type: 'deal_id', value: Number(dealId) }] });
+			const minted = await mintCouponNft(umi, collection.toBase58(), name, 'DEAL', jsonUri);
+
+			// Now verify on-chain and count against supply
+			const ix = ixVerifyAndCountMint(programId, publicKey, merchantPda, dealPda, dealId, new PublicKey(minted));
 			const tx = new Transaction().add(ix);
 			tx.feePayer = publicKey;
 			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
@@ -96,14 +110,14 @@ export default function DealsPage() {
 			setErrorMsg(null);
 			const list = await fetchAllDeals(connection, programId);
 			setDeals(list.map(d => ({ pubkey: d.pubkey.toBase58(), account: d.account })));
-			alert(`Minted (counter): ${sig}`);
+			alert(`NFT minted and verified: ${sig}`);
 		} catch (e: any) {
 			console.error('mint error', e);
 			setErrorMsg(e?.message || 'Transaction failed');
 		} finally {
 			setMinting(false);
 		}
-	}, [publicKey, signTransaction, connection, programId]);
+	}, [publicKey, signTransaction, connection, programId, umi]);
 
 	return (
 		<div className="space-y-8">
@@ -179,18 +193,18 @@ export default function DealsPage() {
 					<span className="text-sm text-neutral-400">Total Supply</span>
 					<input name="total" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={2} />
 				</label>
-				<div className="col-span-1 md:col-span-2">
+				<div className="col-span-1 md:grid-cols-2">
 					<button disabled={creating} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{creating ? 'Creating…' : 'Create'}</button>
 				</div>
 			</form>
 
 			<form action={onMint} className="rounded-lg border border-neutral-800 p-4 space-y-3">
-				<div className="font-medium">Mint Coupon (counter)</div>
+				<div className="font-medium">Mint Coupon NFT (with collection)</div>
 				<label className="space-y-1 block">
 					<span className="text-sm text-neutral-400">Deal ID</span>
 					<input name="dealId" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={1} />
 				</label>
-				<button disabled={minting} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{minting ? 'Minting…' : 'Mint'}</button>
+				<button disabled={minting} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{minting ? 'Minting…' : 'Mint & Verify'}</button>
 			</form>
 		</div>
 	)

@@ -9,6 +9,7 @@ const IX = {
 	AddReview: 4,
 	VerifyAndCountMint: 5,
 	RedeemAndBurn: 6,
+	SetCollectionMint: 7,
 } as const;
 
 const schemas = {
@@ -28,6 +29,7 @@ const schemas = {
 	AddReviewArgs: { struct: { deal_id: 'u64', rating: 'u8', comment: 'string' } },
 	VerifyAndCountMintArgs: { struct: { deal_id: 'u64', mint: { array: { type: 'u8', len: 32 } } } },
 	RedeemAndBurnArgs: { struct: { mint: { array: { type: 'u8', len: 32 } } } },
+	SetCollectionMintArgs: { struct: { collection_mint: { array: { type: 'u8', len: 32 } } } },
 
 	Merchant: {
 		struct: {
@@ -35,6 +37,7 @@ const schemas = {
 			name: 'string',
 			uri: 'string',
 			total_deals: 'u32',
+			collection_mint: { array: { type: 'u8', len: 32 } },
 		},
 	},
 	Deal: {
@@ -90,6 +93,18 @@ export function ixRegisterMerchant(programId: PublicKey, payer: PublicKey, merch
 			{ pubkey: payer, isSigner: true, isWritable: true },
 			{ pubkey: merchantPda, isSigner: false, isWritable: true },
 			{ pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+		],
+		data,
+	});
+}
+
+export function ixSetCollectionMint(programId: PublicKey, payer: PublicKey, merchantPda: PublicKey, collectionMint: PublicKey) {
+	const data = Buffer.concat([Buffer.from([IX.SetCollectionMint]), serialize(schemas.SetCollectionMintArgs as any, { collection_mint: Array.from(collectionMint.toBytes()) })]);
+	return new TransactionInstruction({
+		programId,
+		keys: [
+			{ pubkey: payer, isSigner: true, isWritable: false },
+			{ pubkey: merchantPda, isSigner: false, isWritable: true },
 		],
 		data,
 	});
@@ -175,11 +190,30 @@ export type DealAccount = {
 	minted: number;
 };
 
+export type MerchantAccount = {
+	merchant: Uint8Array;
+	name: string;
+	uri: string;
+	total_deals: number;
+	collection_mint: Uint8Array;
+};
+
 export async function fetchDeal(connection: Connection, dealPda: PublicKey): Promise<DealAccount | null> {
 	const info = await connection.getAccountInfo(dealPda);
 	if (!info?.data) return null;
 	const decoded = deserialize<DealAccount>(schemas.Deal as any, info.data);
 	return decoded;
+}
+
+export async function fetchMerchant(connection: Connection, merchantPda: PublicKey): Promise<MerchantAccount | null> {
+	const info = await connection.getAccountInfo(merchantPda);
+	if (!info?.data) return null;
+	try {
+		const decoded = deserialize<MerchantAccount>(schemas.Merchant as any, info.data);
+		return decoded;
+	} catch {
+		return null;
+	}
 }
 
 export async function fetchAllDeals(connection: Connection, programId: PublicKey): Promise<Array<{ pubkey: PublicKey; account: DealAccount }>> {
