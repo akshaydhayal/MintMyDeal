@@ -1,0 +1,92 @@
+Short answer: The merchant creates the collection NFT once. Each coupon is its own NFT mint created and minted at the time of issuance. In Metaplex, “create” for an NFT typically also mints 1 token, so you usually don’t do a separate “create then mint” for single-supply NFTs.
+How it works in practice
+Collection NFT (one-time):
+Merchant creates a collection NFT and keeps the collection authority (or delegates it to the program PDA via a Collection Authority Record).
+Coupon NFT (per coupon):
+Each coupon is a brand-new NFT mint with metadata that points to the merchant’s collection (and includes deal_id, discount, expiry).
+You usually call a single helper that creates the mint, initializes metadata, creates the master edition, and mints 1 token to the user’s wallet in one go.
+Who mints the coupon NFTs
+Client SDK (recommended first):
+The DApp (Umi/JS) calls Metaplex create/mint to mint the coupon NFT to the user.
+It sets and verifies the collection using the merchant’s collection authority (merchant signs) or a program PDA that’s been delegated collection authority.
+Then the program is called to verify_and_count_mint (enforce rules and increment supply).
+Program CPI (stricter, more complex):
+Your on-chain program calls Metaplex/SPL via CPI to create and mint the NFT, using a PDA as collection authority.
+Pros: hard guarantees and supply enforcement on-chain. Cons: more accounts/compute and version coupling.
+“Create vs mint” in Metaplex (simplified)
+1-of-1 NFTs: You typically use a single “create” helper that also mints 1 token (no separate mint step needed).
+Editioned/prints: Create a master edition once, then mint new editions (prints) later with a separate instruction.
+For coupons (single token each), stick to “create (which mints 1)” per coupon.
+ok, so you plan the next steps, like integrating the metaplex core nft with the deals. you figure out everythinh, juts i need a visual beautiful dapp that has merhcnats who creates the deals and collection nft and sets coupon limit and then user  ints these nft.  You need to put the nft metadata also to strage. do everything as you want to do.
+
+Short path (recommended): Mint with Metaplex Umi on the client; let the program verify/burn. This gives you a beautiful, shippable DApp quickly, with trust guarantees on redemption and issuance limits enforced by the program.
+Phase 1 — NFT plumbing (client + program)
+Collection creation (merchant)
+Client (Umi/JS): Create a collection NFT (image + JSON). Persist collection mint + authority in the merchant’s PDA.
+Optionally delegate collection authority to a program PDA (Collection Authority Record) so the program can verify collection without the merchant online.
+Coupon minting (user)
+Client (Umi/JS): For each mint, “create” a 1-of-1 NFT into the user wallet with:
+collection: merchant’s collection (verified)
+attributes: deal_id, discount_percent, expiry, merchant_pubkey
+symbol/name/description/image
+After the NFT is minted, call program.verify_and_count_mint(mint, deal_id)
+Program checks:
+Metadata exists; collection is verified and equals merchant collection
+Attributes match Deal PDA (deal_id, discount, expiry)
+Deal.minted < total_supply
+If valid: increment Deal.minted
+Redemption (user at merchant)
+Client: call program.redeem_and_burn(mint)
+Program checks user ownership ATA, burns 1 via SPL Token CPI
+Writes RedeemLog PDA to prevent double-spend
+Backend: upon seeing the burn tx signature, serve a coupon code and mark claimed
+Phase 2 — Metadata storage
+Use Umi’s Bundlr (Irys) uploader for image + JSON to Arweave:
+Collection JSON (once per merchant)
+Coupon JSON template per deal; client fills unique fields (name/serial) at mint
+Alternative: Pinata/IPFS if you prefer; keep URIs immutable post-mint
+Phase 3 — DApp UX
+Merchant Dashboard
+Connect wallet; create collection (upload image + name/description), show collection mint
+Create deal: title, description, discount, expiry, total_supply, link to upload deal image/JSON template
+Show minted/remaining, copyable mint link
+Deals (browse)
+List all on-chain Deal PDAs with minted/total, discount, expiry
+View deal → Mint NFT (client mints via Umi, then calls verify_and_count_mint)
+My Coupons
+Show user NFTs belonging to verified merchant collections + deal_id
+CTA: Redeem → burns on-chain, then show coupon code from backend
+Redemption page
+Accept mint address; call redeem_and_burn; display code on success
+Error handling & polish
+Global toasts, non-blocking loaders, friendly on-chain error messages
+Cluster switcher (local/devnet), environment banner
+Phase 4 — Backend (codes)
+Neon Postgres + Prisma (already planned)
+POST /api/code/store: merchant uploads codes for deal_id
+POST /api/redeem: verify burn tx, atomically assign unclaimed code, return to user
+POST /api/code/get: internal helper
+Secure with merchant auth (wallet signature) on upload endpoints
+Phase 5 — Program updates
+New instructions
+verify_and_count_mint(deal_id, mint)
+Accounts: payer, deal_pda, merchant_pda, metadata, edition, collection metadata, token program, system program
+Checks: collection verified, attributes match, supply remaining
+redeem_and_burn(mint)
+Accounts: user, user_ATA, mint, metadata, token program, associated token program, system program
+Burn 1, write RedeemLog
+Optional: discriminator bytes for accounts to speed up client filtering
+Phase 6 — Testing & deploy
+Devnet end-to-end
+Script: create merchant collection → create deal → mint N coupons → verify → redeem → fetch code
+Frontend e2e (Bun or Playwright)
+Deploy DApp (Vercel) with devnet envs; publish demo video
+Stretch (only if needed)
+Full on-chain CPI mint
+Move creation/mint inside the program; requires collection authority delegation and more accounts/compute
+Tradeoff: stronger issuance control vs complexity and fragility
+What I’ll do next (in order)
+Add program instructions: verify_and_count_mint, redeem_and_burn (SPL burn)
+Add Umi in the frontend to mint NFTs into user wallets and upload assets to Bundlr
+Extend merchant dashboard for collection creation and asset uploads
+Wire the flows end-to-end on devnet with clean UI and toasts

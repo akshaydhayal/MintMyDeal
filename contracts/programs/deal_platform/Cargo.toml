@@ -19,6 +19,7 @@ borsh = { workspace = true }
 borsh-derive = { workspace = true }
 num-derive = { workspace = true }
 num-traits = { workspace = true }
+spl-token = { version = "4.0.0", default-features = false, features = ["no-entrypoint"] }
 
 [dev-dependencies]
 solana-program-test = { workspace = true }

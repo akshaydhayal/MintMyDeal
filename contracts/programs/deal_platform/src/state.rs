@@ -17,11 +17,12 @@ pub struct Merchant {
 	pub name: String,
 	pub uri: String,
 	pub total_deals: u32,
+	pub collection_mint: Pubkey,
 }
 
 impl Merchant {
 	pub fn space() -> usize {
-		32 + 4 + MAX_NAME_LEN + 4 + MAX_URI_LEN + 4
+		32 + 4 + MAX_NAME_LEN + 4 + MAX_URI_LEN + 4 + 32
 	}
 }
 
