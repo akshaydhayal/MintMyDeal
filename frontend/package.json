@@ -16,6 +16,7 @@
     "@metaplex-foundation/umi-signer-wallet-adapters": "^1.4.1",
     "@metaplex-foundation/umi-uploader-irys": "^1.4.1",
     "@solana/spl-token": "^0.4.6",
+    "@solana/wallet-adapter-phantom": "^0.9.28",
     "@solana/wallet-adapter-react": "^0.15.39",
     "@solana/wallet-adapter-react-ui": "^0.9.39",
     "@solana/wallet-adapter-wallets": "^0.19.37",
