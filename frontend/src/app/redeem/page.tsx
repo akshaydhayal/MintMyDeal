@@ -7,6 +7,7 @@ import { deriveRedeemPda, ixRedeemAndBurn, fetchAllDeals, type DealAccount } fro
 import { useToast } from '@/lib/toast/ToastContext';
 import { parseContractError, getShortTxSignature, getExplorerUrl } from '@/lib/solana/errors';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token';
+import { NFTCardSkeleton } from '@/components/Loader';
 
 interface UserNFT {
 	mint: PublicKey;
@@ -251,9 +252,13 @@ export default function RedeemPage() {
 
 			{/* Loading NFTs */}
 			{publicKey && loadingNFTs && (
-				<div className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-12 text-center">
-					<div className="text-4xl mb-4 animate-pulse">⏳</div>
-					<div className="text-xl text-neutral-300">Loading your NFTs...</div>
+				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+					<NFTCardSkeleton />
+					<NFTCardSkeleton />
+					<NFTCardSkeleton />
+					<NFTCardSkeleton />
+					<NFTCardSkeleton />
+					<NFTCardSkeleton />
 				</div>
 			)}
 

@@ -5,6 +5,7 @@ import { useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { fetchAllDeals, type DealAccount } from '@/lib/solana/instructions';
 import Link from 'next/link';
+import { DealCardSkeleton } from '@/components/Loader';
 
 export default function DealsPage() {
 	const { connection } = useConnection();
@@ -77,9 +78,20 @@ export default function DealsPage() {
 					}} className="text-sm underline">Refresh</button>
 				</div>
 				{loading ? (
-					<div className="text-neutral-400">Loading…</div>
+					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+						<DealCardSkeleton />
+						<DealCardSkeleton />
+						<DealCardSkeleton />
+						<DealCardSkeleton />
+						<DealCardSkeleton />
+						<DealCardSkeleton />
+					</div>
 				) : deals.length === 0 ? (
-					<div className="text-neutral-400">No deals found.</div>
+					<div className="text-center py-12">
+						<div className="text-6xl mb-4">📭</div>
+						<div className="text-lg font-medium text-neutral-300 mb-2">No Deals Found</div>
+						<p className="text-sm text-neutral-500">Check back later for exciting deals!</p>
+					</div>
 				) : (
 					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 						{deals.map(d => {
