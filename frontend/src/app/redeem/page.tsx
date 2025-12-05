@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
-import { deriveRedeemPda, ixRedeemAndBurn, fetchAllDeals, type DealAccount } from '@/lib/solana/instructions';
+import { deriveRedeemPda, ixRedeemAndBurn, fetchAllDeals, type DealAccount, ixListNft, deriveEscrowPda, deriveListingPda } from '@/lib/solana/instructions';
 import { useToast } from '@/lib/toast/ToastContext';
 import { parseContractError, getShortTxSignature, getExplorerUrl } from '@/lib/solana/errors';
 import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token';
@@ -27,6 +27,9 @@ export default function RedeemPage() {
 	const [userNFTs, setUserNFTs] = useState<UserNFT[]>([]);
 	const [loadingNFTs, setLoadingNFTs] = useState(false);
 	const [redeeming, setRedeeming] = useState<string | null>(null);
+	const [showListModal, setShowListModal] = useState<UserNFT | null>(null);
+	const [listPrice, setListPrice] = useState('');
+	const [listing, setListing] = useState<string | null>(null);
 
 	// Fetch user's NFTs using getTokenAccountsByOwner
 	useEffect(() => {
@@ -216,6 +219,78 @@ export default function RedeemPage() {
 		}
 	}, [publicKey, signTransaction, connection, programId, showToast, updateToast]);
 
+	const onListNFT = useCallback(async () => {
+		if (!publicKey || !signTransaction || !showListModal) {
+			showToast('error', 'Wallet Not Connected', 'Please connect your wallet');
+			return;
+		}
+
+		const priceNum = parseFloat(listPrice);
+		if (!priceNum || priceNum <= 0) {
+			showToast('error', 'Invalid Price', 'Please enter a valid price');
+			return;
+		}
+
+		const priceLamports = BigInt(Math.floor(priceNum * 1e9)); // Convert SOL to lamports
+		const nft = showListModal;
+		const mintStr = nft.mint.toBase58();
+
+		setListing(mintStr);
+		const toastId = showToast('loading', 'Listing NFT...', 'Preparing transaction');
+
+		try {
+			const [escrowPda] = deriveEscrowPda(programId, nft.mint);
+			const escrowATA = getAssociatedTokenAddressSync(nft.mint, escrowPda, true);
+			const sellerATA = getAssociatedTokenAddressSync(nft.mint, publicKey);
+			const [listingPda] = deriveListingPda(programId, nft.mint, publicKey);
+			
+			// Create escrow ATA if needed
+			const escrowInfo = await connection.getAccountInfo(escrowATA);
+			const { createAssociatedTokenAccountInstruction } = await import('@solana/spl-token');
+			
+			const tx = new Transaction();
+			if (!escrowInfo) {
+				tx.add(createAssociatedTokenAccountInstruction(
+					publicKey,
+					escrowATA,
+					escrowPda,
+					nft.mint
+				));
+			}
+
+			const listIx = ixListNft(programId, publicKey, listingPda, nft.mint, sellerATA, escrowATA, TOKEN_PROGRAM_ID, priceLamports);
+			tx.add(listIx);
+			
+			tx.feePayer = publicKey;
+			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+			
+			const signed = await signTransaction(tx);
+			const sig = await connection.sendRawTransaction(signed.serialize());
+			
+			updateToast(toastId, { title: 'Confirming transaction...', message: getShortTxSignature(sig) });
+			await connection.confirmTransaction(sig, 'confirmed');
+			
+			// Remove NFT from list (it's now in escrow)
+			setUserNFTs(prev => prev.filter(n => n.mint.toBase58() !== mintStr));
+			setShowListModal(null);
+			setListPrice('');
+			
+			updateToast(toastId, {
+				type: 'success',
+				title: 'NFT Listed Successfully!',
+				message: `Listed for ${priceNum} SOL`,
+				txLink: getExplorerUrl(sig),
+				duration: 10000
+			});
+		} catch (e: any) {
+			console.error('list error', e);
+			const errorMsg = parseContractError(e);
+			updateToast(toastId, { type: 'error', title: 'Listing Failed', message: errorMsg, duration: 10000 });
+		} finally {
+			setListing(null);
+		}
+	}, [publicKey, signTransaction, connection, programId, showToast, updateToast, showListModal, listPrice]);
+
 	return (
 		<div className="space-y-6">
 			<div>
@@ -341,18 +416,107 @@ export default function RedeemPage() {
 											</div>
 										)}
 
-										{/* Redeem Button */}
+									{/* Action Buttons */}
+									<div className="flex gap-2">
+										<button
+											onClick={() => setShowListModal(nft)}
+											disabled={isRedeeming}
+											className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+										>
+											💰 List NFT
+										</button>
 										<button
 											onClick={() => onRedeemNFT(nft)}
 											disabled={isRedeeming}
-											className="w-full px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+											className="flex-1 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 										>
-											{isRedeeming ? '⏳ Redeeming...' : '🔥 Redeem Coupon'}
+											{isRedeeming ? '⏳ Redeeming...' : '🔥 Redeem'}
 										</button>
 									</div>
 								</div>
+								</div>
 							);
 						})}
+					</div>
+				</div>
+			)}
+
+			{/* List NFT Modal */}
+			{showListModal && (
+				<div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+					<div className="bg-neutral-900 rounded-xl border border-neutral-800 max-w-md w-full p-6 space-y-4">
+						<div className="flex items-center justify-between">
+							<h3 className="text-xl font-bold">💰 List NFT for Sale</h3>
+							<button
+								onClick={() => {
+									setShowListModal(null);
+									setListPrice('');
+								}}
+								className="text-neutral-400 hover:text-white"
+							>
+								✕
+							</button>
+						</div>
+
+						{/* NFT Preview */}
+						<div className="rounded-lg border border-neutral-800 bg-neutral-900/50 overflow-hidden">
+							{showListModal.image && (
+								<div className="aspect-video bg-neutral-900">
+									<img 
+										src={showListModal.image} 
+										alt={showListModal.name}
+										className="w-full h-full object-cover"
+									/>
+								</div>
+							)}
+							<div className="p-3">
+								<div className="font-medium">{showListModal.name}</div>
+								{showListModal.dealInfo && (
+									<div className="text-xs text-green-400 mt-1">
+										{showListModal.dealInfo.account.discount_percent}% OFF - {showListModal.dealInfo.account.title}
+									</div>
+								)}
+							</div>
+						</div>
+
+						{/* Price Input */}
+						<div className="space-y-2">
+							<label className="block text-sm font-medium text-neutral-300">
+								Price (SOL) <span className="text-red-400">*</span>
+							</label>
+							<input
+								type="number"
+								step="0.01"
+								min="0"
+								value={listPrice}
+								onChange={(e) => setListPrice(e.target.value)}
+								placeholder="0.5"
+								className="w-full px-4 py-2 rounded-lg bg-neutral-800 border border-neutral-700 text-white placeholder:text-neutral-500 focus:outline-none focus:border-blue-500"
+							/>
+							<p className="text-xs text-neutral-400">
+								Buyers will pay this amount in SOL
+							</p>
+						</div>
+
+						{/* Action Buttons */}
+						<div className="flex gap-3 pt-2">
+							<button
+								onClick={() => {
+									setShowListModal(null);
+									setListPrice('');
+								}}
+								className="flex-1 px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-white font-medium transition-colors"
+							>
+								Cancel
+							</button>
+							<button
+								onClick={onListNFT}
+								disabled={!listPrice || listing === showListModal.mint.toBase58()}
+								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							>
+								{listing === showListModal.mint.toBase58() ? '⏳ Listing...' : '💰 List NFT'}
+							</button>
+						</div>
 					</div>
 				</div>
 			)}

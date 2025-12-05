@@ -15,6 +15,9 @@ export function Navbar() {
 						<Link href="/deals" className="text-sm text-neutral-400 hover:text-white transition-colors">
 							Deals
 						</Link>
+						<Link href="/marketplace" className="text-sm text-neutral-400 hover:text-white transition-colors">
+							🛒 Marketplace
+						</Link>
 						<Link href="/merchant" className="text-sm text-neutral-400 hover:text-white transition-colors">
 							Merchant
 						</Link>

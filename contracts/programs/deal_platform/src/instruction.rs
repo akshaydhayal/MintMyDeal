@@ -31,4 +31,8 @@ pub enum DealInstruction {
 	RedeemAndBurn { mint: [u8; 32] },
 	// 7 (new, placed last to avoid shifting earlier discriminants)
 	SetCollectionMint { collection_mint: [u8; 32] },
+	// 8 - List NFT for sale
+	ListNft { price: u64 },
+	// 9 - Buy NFT from listing
+	BuyNft,
 }

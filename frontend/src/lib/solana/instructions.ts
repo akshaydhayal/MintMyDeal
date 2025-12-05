@@ -10,6 +10,8 @@ const IX = {
 	VerifyAndCountMint: 5,
 	RedeemAndBurn: 6,
 	SetCollectionMint: 7,
+	ListNft: 8,
+	BuyNft: 9,
 } as const;
 
 const schemas = {
@@ -62,6 +64,15 @@ const schemas = {
 			deal: { array: { type: 'u8', len: 32 } },
 			rating: 'u8',
 			comment: 'string',
+			created_at: 'i64',
+		},
+	},
+	ListNftArgs: { struct: { price: 'u64' } },
+	Listing: {
+		struct: {
+			seller: { array: { type: 'u8', len: 32 } },
+			nft_mint: { array: { type: 'u8', len: 32 } },
+			price: 'u64',
 			created_at: 'i64',
 		},
 	},
@@ -310,5 +321,141 @@ export async function fetchReviewsForDeal(connection: Connection, programId: Pub
 		}
 	}
 	// Sort by created_at descending (newest first)
+	return out.sort((a, b) => Number(b.account.created_at - a.account.created_at));
+}
+
+// ==================== Marketplace Instructions ====================
+
+export type ListingAccount = {
+	seller: number[];
+	nft_mint: number[];
+	price: bigint;
+	created_at: bigint;
+};
+
+export function deriveListingPda(programId: PublicKey, nftMint: PublicKey, seller: PublicKey): [PublicKey, number] {
+	return PublicKey.findProgramAddressSync([Buffer.from('listing'), nftMint.toBuffer(), seller.toBuffer()], programId);
+}
+
+export function deriveEscrowPda(programId: PublicKey, nftMint: PublicKey): [PublicKey, number] {
+	return PublicKey.findProgramAddressSync([Buffer.from('escrow'), nftMint.toBuffer()], programId);
+}
+
+export function ixListNft(
+	programId: PublicKey,
+	seller: PublicKey,
+	listingPda: PublicKey,
+	nftMint: PublicKey,
+	sellerTokenAccount: PublicKey,
+	escrowTokenAccount: PublicKey,
+	tokenProgram: PublicKey,
+	price: bigint
+) {
+	const data = Buffer.concat([Buffer.from([IX.ListNft]), serialize(schemas.ListNftArgs as any, { price })]);
+	return new TransactionInstruction({
+		programId,
+		keys: [
+			{ pubkey: seller, isSigner: true, isWritable: true },
+			{ pubkey: listingPda, isSigner: false, isWritable: true },
+			{ pubkey: nftMint, isSigner: false, isWritable: false },
+			{ pubkey: sellerTokenAccount, isSigner: false, isWritable: true },
+			{ pubkey: escrowTokenAccount, isSigner: false, isWritable: true },
+			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
+			{ pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+		],
+		data,
+	});
+}
+
+export function ixBuyNft(
+	programId: PublicKey,
+	buyer: PublicKey,
+	seller: PublicKey,
+	listingPda: PublicKey,
+	nftMint: PublicKey,
+	escrowPda: PublicKey,
+	escrowTokenAccount: PublicKey,
+	buyerTokenAccount: PublicKey,
+	tokenProgram: PublicKey
+) {
+	const data = Buffer.from([IX.BuyNft]);
+	return new TransactionInstruction({
+		programId,
+		keys: [
+			{ pubkey: buyer, isSigner: true, isWritable: true },
+			{ pubkey: seller, isSigner: false, isWritable: true },
+			{ pubkey: listingPda, isSigner: false, isWritable: true },
+			{ pubkey: nftMint, isSigner: false, isWritable: false },
+			{ pubkey: escrowPda, isSigner: false, isWritable: false },
+			{ pubkey: escrowTokenAccount, isSigner: false, isWritable: true },
+			{ pubkey: buyerTokenAccount, isSigner: false, isWritable: true },
+			{ pubkey: tokenProgram, isSigner: false, isWritable: false },
+			{ pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+		],
+		data,
+	});
+}
+
+export async function fetchListing(connection: Connection, listingPda: PublicKey): Promise<ListingAccount | null> {
+	const info = await connection.getAccountInfo(listingPda);
+	if (!info?.data) return null;
+	try {
+		const decoded = deserialize<ListingAccount>(schemas.Listing as any, info.data);
+		return decoded;
+	} catch {
+		return null;
+	}
+}
+
+export async function fetchAllListings(connection: Connection, programId: PublicKey): Promise<Array<{ pubkey: PublicKey; account: ListingAccount }>> {
+	const accounts = await connection.getProgramAccounts(programId, { commitment: 'confirmed' });
+	const out: Array<{ pubkey: PublicKey; account: ListingAccount }> = [];
+	
+	// Listing account size is 80 bytes (32 + 32 + 8 + 8)
+	const LISTING_SIZE = 80;
+	
+	console.log(`Total program accounts: ${accounts.length}`);
+	
+	for (const acc of accounts) {
+		// Filter by account size first
+		if (acc.account.data.length !== LISTING_SIZE) {
+			console.log(`Skipping account ${acc.pubkey.toBase58()}: wrong size (${acc.account.data.length} bytes, expected ${LISTING_SIZE})`);
+			continue;
+		}
+		
+		try {
+			const decoded = deserialize<ListingAccount>(schemas.Listing as any, acc.account.data);
+			
+			// Additional validation: check if price is reasonable (not crazy high)
+			// Max reasonable price: 1000 SOL = 1,000,000,000,000 lamports
+			const MAX_REASONABLE_PRICE = BigInt(1_000_000_000_000);
+			if (decoded.price > MAX_REASONABLE_PRICE) {
+				console.log(`Skipping account ${acc.pubkey.toBase58()}: unreasonable price (${decoded.price})`);
+				continue;
+			}
+			
+			// Also skip if price is exactly 0 (likely not a real listing)
+			if (decoded.price === BigInt(0)) {
+				console.log(`Skipping account ${acc.pubkey.toBase58()}: price is 0`);
+				continue;
+			}
+			
+			// Validate that seller and nft_mint are valid pubkeys (all non-zero)
+			const sellerBytes = Buffer.from(decoded.seller);
+			const mintBytes = Buffer.from(decoded.nft_mint);
+			const isSellerValid = sellerBytes.some(b => b !== 0);
+			const isMintValid = mintBytes.some(b => b !== 0);
+			
+			if (!isSellerValid || !isMintValid) {
+				console.log(`Skipping account ${acc.pubkey.toBase58()}: invalid seller or mint pubkey`);
+				continue;
+			}
+			
+			console.log(`Valid listing found: ${acc.pubkey.toBase58()}, price: ${decoded.price}`);
+			out.push({ pubkey: acc.pubkey, account: decoded });
+		} catch (e) {
+			// not a Listing account; skip
+		}
+	}
 	return out.sort((a, b) => Number(b.account.created_at - a.account.created_at));
 }
