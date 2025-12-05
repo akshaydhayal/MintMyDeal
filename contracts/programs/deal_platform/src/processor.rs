@@ -36,8 +36,8 @@ impl Processor {
 			DealInstruction::SetCollectionMint { collection_mint } => {
 				Self::process_set_collection_mint(program_id, accounts, Pubkey::new_from_array(collection_mint))
 			}
-			DealInstruction::CreateDeal { deal_id, title, description, discount_percent, expiry, total_supply } => {
-				Self::process_create_deal(program_id, accounts, deal_id, title, description, discount_percent, expiry, total_supply)
+			DealInstruction::CreateDeal { deal_id, title, description, discount_percent, expiry, total_supply, image_uri, metadata_uri } => {
+				Self::process_create_deal(program_id, accounts, deal_id, title, description, discount_percent, expiry, total_supply, image_uri, metadata_uri)
 			}
 			DealInstruction::MintCouponNft { deal_id } => Self::process_mint_coupon(program_id, accounts, deal_id),
 			DealInstruction::RedeemCoupon { mint } => Self::process_redeem_coupon(program_id, accounts, Pubkey::new_from_array(mint)),
@@ -124,9 +124,13 @@ impl Processor {
 		discount_percent: u8,
 		expiry: i64,
 		total_supply: u32,
+		image_uri: alloc::string::String,
+		metadata_uri: alloc::string::String,
 	) -> ProgramResult {
 		Self::assert_len(&title, MAX_TITLE_LEN)?;
 		Self::assert_len(&description, MAX_DESC_LEN)?;
+		Self::assert_len(&image_uri, MAX_URI_LEN)?;
+		Self::assert_len(&metadata_uri, MAX_URI_LEN)?;
 
 		let account_iter = &mut accounts.iter();
 		let payer = next_account_info(account_iter)?; // signer (merchant)
@@ -173,6 +177,8 @@ impl Processor {
 				expiry,
 				total_supply,
 				minted: 0,
+				image_uri,
+				metadata_uri,
 			};
 			deal.serialize(&mut &mut dst[..])?;
 		}
