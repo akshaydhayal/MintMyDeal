@@ -3,22 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
-import { deriveDealPda, deriveMerchantPda, fetchMerchant, ixCreateDeal, ixRegisterMerchant, ixSetCollectionMint, type MerchantAccount } from '@/lib/solana/instructions';
-import { useUmi } from '@/lib/umi/client';
-import { mintCollection, uploadImageAndJson } from '@/lib/umi/mint';
+import { deriveDealPda, deriveMerchantPda, fetchMerchant, ixCreateDeal, ixRegisterMerchant, type MerchantAccount } from '@/lib/solana/instructions';
 import { useToast } from '@/lib/toast/ToastContext';
 import { parseContractError, getShortTxSignature, getExplorerUrl } from '@/lib/solana/errors';
 
 export default function MerchantPage() {
 	const { connection } = useConnection();
 	const { publicKey, signTransaction } = useWallet();
-	const umi = useUmi();
 	const { showToast, updateToast } = useToast();
 	const programId = useMemo(() => new PublicKey(process.env.NEXT_PUBLIC_PROGRAM_ID || ''), []);
 	const [loading, setLoading] = useState(false);
 	const [creating, setCreating] = useState(false);
 	const [errorMsg, setErrorMsg] = useState<string | null>(null);
-	const [uploadStatus, setUploadStatus] = useState<string | null>(null);
 	const [merchantAcc, setMerchantAcc] = useState<MerchantAccount | null>(null);
 
 	const merchantPda = useMemo(() => (publicKey ? deriveMerchantPda(programId, publicKey) : null), [programId, publicKey]);
@@ -74,59 +70,12 @@ export default function MerchantPage() {
 		}
 	}, [publicKey, signTransaction, connection, programId, showToast, updateToast]);
 
-	const onCreateCollection = useCallback(async (formData: FormData) => {
-		if (!publicKey || !signTransaction) return;
-		if (!merchantPda) return;
-		setLoading(true);
-		const toastId = showToast('loading', 'Creating collection NFT...', 'Uploading metadata');
-		try {
-			const name = String(formData.get('cname') || 'Merchant Collection');
-			const symbol = String(formData.get('csymbol') || 'DEAL');
-			const desc = String(formData.get('cdesc') || '');
-			const imgFile = formData.get('cimage') as File | null;
-			if (!imgFile) throw new Error('Image required');
-			
-			updateToast(toastId, { title: 'Uploading to Irys...', message: 'This may take a minute' });
-			const { imageUri, jsonUri } = await uploadImageAndJson(umi, imgFile, { name, symbol, description: desc });
-			
-			updateToast(toastId, { title: 'Minting collection NFT...', message: 'Creating on-chain' });
-			const collection = await mintCollection(umi, name, symbol, jsonUri);
-			
-			updateToast(toastId, { title: 'Linking collection to merchant...', message: 'Finalizing' });
-			const ix = ixSetCollectionMint(programId, publicKey, merchantPda, new PublicKey(collection));
-			const tx = new Transaction().add(ix);
-			tx.feePayer = publicKey;
-			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-			const signed = await signTransaction(tx);
-			const sig = await connection.sendRawTransaction(signed.serialize());
-			await connection.confirmTransaction(sig, 'confirmed');
-			const acc = await fetchMerchant(connection, merchantPda);
-			setMerchantAcc(acc);
-			setErrorMsg(null);
-			updateToast(toastId, { 
-				type: 'success', 
-				title: 'Collection Created Successfully!', 
-				message: `Mint: ${collection.slice(0, 8)}...${collection.slice(-8)}`,
-				txLink: getExplorerUrl(sig),
-				duration: 10000 
-			});
-		} catch (e: any) {
-			console.error('create collection error', e);
-			const errorMsg = parseContractError(e);
-			setErrorMsg(errorMsg);
-			updateToast(toastId, { type: 'error', title: 'Collection Creation Failed', message: errorMsg, duration: 10000 });
-		} finally {
-			setLoading(false);
-		}
-	}, [publicKey, signTransaction, connection, programId, merchantPda, umi, showToast, updateToast]);
-
 	const onCreate = useCallback(async (formData: FormData) => {
 		if (!publicKey || !signTransaction || !programId) { 
 			showToast('error', 'Wallet Not Connected', 'Please connect your wallet and try again');
 			return;
 		}
 		setCreating(true);
-		setUploadStatus(null);
 		setErrorMsg(null);
 		
 		let toastId: string | null = null;
@@ -218,87 +167,203 @@ export default function MerchantPage() {
 			}
 		} finally {
 			setCreating(false);
-			setUploadStatus(null);
 		}
 	}, [publicKey, signTransaction, connection, programId, showToast, updateToast]);
 
 	return (
 		<div className="space-y-8">
-			<h2 className="text-xl font-semibold">Merchant Dashboard</h2>
+			<div>
+				<h2 className="text-3xl font-bold mb-2">Merchant Dashboard</h2>
+				<p className="text-neutral-400">Create and manage your deals</p>
+			</div>
 
 			{errorMsg && (
 				<div className="rounded border border-yellow-800 bg-yellow-950/50 text-yellow-200 px-3 py-2">{errorMsg}</div>
 			)}
-			{uploadStatus && (
-				<div className="rounded border border-blue-800 bg-blue-950/50 text-blue-200 px-3 py-2 flex items-center gap-2">
-					{uploadStatus.includes('...') && <span className="animate-pulse">●</span>}
-					{uploadStatus}
-				</div>
+
+			{/* Merchant Profile Section - Show if registered */}
+			{merchantAcc && (
+				<section className="rounded-lg border border-blue-800/50 bg-blue-950/30 p-6">
+					<div className="flex items-start justify-between mb-4">
+						<div>
+							<div className="text-xl font-bold text-blue-200 mb-1">🏪 {merchantAcc.name || 'Your Merchant Profile'}</div>
+							<div className="text-sm text-blue-300/60">Registered Merchant</div>
+						</div>
+					</div>
+					
+					<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+						<div className="rounded-lg border border-blue-700/30 bg-blue-900/20 p-4">
+							<div className="text-xs text-blue-300/60 mb-1">Merchant Name</div>
+							<div className="font-medium text-blue-100">{merchantAcc.name || 'N/A'}</div>
+						</div>
+						
+						<div className="rounded-lg border border-blue-700/30 bg-blue-900/20 p-4">
+							<div className="text-xs text-blue-300/60 mb-1">Total Deals Created</div>
+							<div className="font-bold text-2xl text-blue-100">{merchantAcc.total_deals}</div>
+						</div>
+						
+						<div className="rounded-lg border border-blue-700/30 bg-blue-900/20 p-4">
+							<div className="text-xs text-blue-300/60 mb-1">Website</div>
+							{merchantAcc.uri ? (
+								<a href={merchantAcc.uri} target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:text-blue-200 underline text-sm break-all">
+									{merchantAcc.uri}
+								</a>
+							) : (
+								<div className="text-blue-300/40 text-sm">Not provided</div>
+							)}
+						</div>
+					</div>
+					
+					<div className="mt-4 pt-4 border-t border-blue-800/30">
+						<div className="text-xs text-blue-300/60 mb-1">Wallet Address</div>
+						<div className="font-mono text-xs text-blue-200 break-all">{new PublicKey(merchantAcc.merchant).toBase58()}</div>
+					</div>
+				</section>
 			)}
 
-			<section className="rounded-lg border border-neutral-800 p-4 space-y-3">
-				<div className="font-medium">Register Merchant</div>
-				<form action={onRegister} className="space-y-3">
-					<input name="name" placeholder="Merchant Name" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" />
-					<input name="uri" placeholder="https://example.com" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" />
-					<button disabled={loading} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{loading ? 'Submitting…' : 'Register'}</button>
-				</form>
-				{merchantAcc && (
-					<div className="text-sm text-neutral-400">Collection: <span className="font-mono">{new PublicKey(merchantAcc.collection_mint).toBase58()}</span></div>
-				)}
-			</section>
+			{/* Registration Form - Show only if NOT registered */}
+			{!merchantAcc && (
+				<section className="rounded-lg border border-green-800/50 bg-green-950/30 p-6">
+					<div className="mb-4">
+						<div className="text-xl font-bold text-green-200 mb-2">🚀 Register as Merchant</div>
+						<p className="text-sm text-green-300/70">Start creating deals by registering your merchant account</p>
+					</div>
+					<form action={onRegister} className="space-y-4">
+						<label className="space-y-2">
+							<span className="text-sm text-green-300">Merchant Name <span className="text-red-400">*</span></span>
+							<input 
+								name="name" 
+								placeholder="My Amazing Store" 
+								className="w-full bg-neutral-900 border border-green-800 rounded px-3 py-2 text-white placeholder:text-neutral-500 focus:outline-none focus:border-green-600" 
+								required
+							/>
+						</label>
+						<label className="space-y-2">
+							<span className="text-sm text-green-300">Website URL (Optional)</span>
+							<input 
+								name="uri" 
+								placeholder="https://mystore.com" 
+								className="w-full bg-neutral-900 border border-green-800 rounded px-3 py-2 text-white placeholder:text-neutral-500 focus:outline-none focus:border-green-600" 
+							/>
+						</label>
+						<button 
+							disabled={loading} 
+							className="w-full px-4 py-3 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+						>
+							{loading ? 'Registering…' : '✓ Register Merchant'}
+						</button>
+					</form>
+				</section>
+			)}
 
-			<section className="rounded-lg border border-neutral-800 p-4 space-y-3">
-				<div className="font-medium">Create Collection (Optional)</div>
-				<p className="text-sm text-neutral-400">Create a collection NFT for your merchant profile (optional feature)</p>
-				<form action={onCreateCollection} className="space-y-3" encType="multipart/form-data">
-					<input name="cname" placeholder="Collection Name" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" />
-					<input name="csymbol" placeholder="Symbol" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" />
-					<input name="cdesc" placeholder="Description" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" />
-					<input name="cimage" type="file" accept="image/*" className="w-full text-sm" />
-					<button disabled={loading} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{loading ? 'Minting…' : 'Create Collection'}</button>
-				</form>
-			</section>
+			{/* Create Deal Section - Show only if registered */}
+			{merchantAcc ? (
+				<section className="rounded-lg border border-purple-800/50 bg-purple-950/30 p-6">
+					<div className="mb-4">
+						<div className="text-xl font-bold text-purple-200 mb-2">🎁 Create New Deal</div>
+						<p className="text-sm text-purple-300/70">
+							Your next deal will be <span className="font-mono font-bold text-purple-200">Deal #{merchantAcc.total_deals + 1}</span>
+						</p>
+						<p className="text-xs text-purple-300/50 mt-1">Image & metadata uploaded once and reused for all NFT mints</p>
+					</div>
+					<form action={onCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+						<label className="space-y-2">
+							<span className="text-sm text-purple-300">Deal Title <span className="text-red-400">*</span></span>
+							<input 
+								name="title" 
+								className="w-full bg-neutral-900 border border-purple-800 rounded px-3 py-2 text-white placeholder:text-neutral-500 focus:outline-none focus:border-purple-600" 
+								placeholder="10% Off Pizza" 
+								required 
+							/>
+						</label>
+						<label className="space-y-2">
+							<span className="text-sm text-purple-300">Description</span>
+							<input 
+								name="description" 
+								className="w-full bg-neutral-900 border border-purple-800 rounded px-3 py-2 text-white placeholder:text-neutral-500 focus:outline-none focus:border-purple-600" 
+								placeholder="Save on your next purchase" 
+							/>
+						</label>
+						<label className="space-y-2">
+							<span className="text-sm text-purple-300">Discount % <span className="text-red-400">*</span></span>
+							<input 
+								name="discount" 
+								type="number" 
+								min="1" 
+								max="100" 
+								className="w-full bg-neutral-900 border border-purple-800 rounded px-3 py-2 text-white focus:outline-none focus:border-purple-600" 
+								defaultValue={10} 
+								required
+							/>
+						</label>
+						<label className="space-y-2">
+							<span className="text-sm text-purple-300">Total Supply (NFTs) <span className="text-red-400">*</span></span>
+							<input 
+								name="total" 
+								type="number" 
+								min="1" 
+								className="w-full bg-neutral-900 border border-purple-800 rounded px-3 py-2 text-white focus:outline-none focus:border-purple-600" 
+								defaultValue={100} 
+								required
+							/>
+						</label>
+						<label className="space-y-2 col-span-1 md:col-span-2">
+							<span className="text-sm text-purple-300">NFT Image <span className="text-red-400">*</span></span>
+							<div className="text-xs text-purple-300/50 mb-1">Uploaded once for all mints - choose wisely!</div>
+							<input 
+								name="image" 
+								type="file" 
+								accept="image/*" 
+								className="w-full text-sm text-purple-200 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-purple-800 file:text-purple-100 hover:file:bg-purple-700 file:cursor-pointer" 
+								required 
+							/>
+						</label>
+						<div className="col-span-1 md:col-span-2">
+							<button 
+								disabled={creating} 
+								className="w-full px-4 py-3 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							>
+								{creating ? '⏳ Creating & Uploading…' : '🎁 Create Deal'}
+							</button>
+						</div>
+					</form>
+				</section>
+			) : (
+				<section className="rounded-lg border border-neutral-700 bg-neutral-900/50 p-6 text-center">
+					<div className="text-4xl mb-3">🔒</div>
+					<div className="text-lg font-medium text-neutral-300 mb-2">Register to Create Deals</div>
+					<p className="text-sm text-neutral-400">
+						You need to register as a merchant before you can create deals. Please fill out the registration form above.
+					</p>
+				</section>
+			)}
 
-			<form action={onCreate} className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-lg border border-neutral-800 p-4">
-				<div className="col-span-1 md:col-span-2">
-					<div className="font-medium">Create Deal (Auto-Numbered)</div>
-					<div className="text-xs text-neutral-400 mt-1">Deal ID will be automatically assigned based on your total deals. Image & metadata uploaded once and reused for all NFT mints.</div>
-				</div>
-				<label className="space-y-1">
-					<span className="text-sm text-neutral-400">Title</span>
-					<input name="title" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" placeholder="10% Off Pizza" required />
-				</label>
-				<label className="space-y-1">
-					<span className="text-sm text-neutral-400">Description</span>
-					<input name="description" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" placeholder="Save on purchase" />
-				</label>
-				<label className="space-y-1">
-					<span className="text-sm text-neutral-400">Discount %</span>
-					<input name="discount" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={10} />
-				</label>
-				<label className="space-y-1">
-					<span className="text-sm text-neutral-400">Total Supply</span>
-					<input name="total" type="number" className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1" defaultValue={100} />
-				</label>
-				<label className="space-y-1 col-span-1 md:col-span-2">
-					<span className="text-sm text-neutral-400">NFT Image (Required - uploaded once for all mints)</span>
-					<input name="image" type="file" accept="image/*" className="w-full text-sm" required />
-				</label>
-				<div className="col-span-1 md:col-span-2">
-					<button disabled={creating} className="px-3 py-1.5 rounded bg-white text-black disabled:opacity-50">{creating ? 'Creating & Uploading…' : 'Create Deal'}</button>
-				</div>
-			</form>
-
+			{/* Quick Actions - Show if registered */}
 			{merchantAcc && (
-				<section className="rounded-lg border border-green-800/50 bg-green-950/30 p-4">
-					<div className="font-medium text-green-200">📊 Your Stats</div>
-					<p className="text-sm text-green-300/80 mt-2">
-						Total Deals Created: <span className="font-mono font-bold">{merchantAcc.total_deals}</span>
-					</p>
-					<p className="text-sm text-green-300/80 mt-1">
-						View and mint NFTs on the <a href="/deals" className="underline font-medium">Deals page</a>
-					</p>
+				<section className="rounded-lg border border-neutral-800 bg-neutral-900/50 p-6">
+					<div className="text-lg font-medium mb-4">Quick Actions</div>
+					<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+						<a 
+							href="/deals" 
+							className="flex items-center gap-3 p-4 rounded-lg border border-neutral-700 hover:border-neutral-600 transition-colors group"
+						>
+							<div className="text-2xl">📋</div>
+							<div>
+								<div className="font-medium group-hover:text-white transition-colors">View All Deals</div>
+								<div className="text-xs text-neutral-500">Browse and manage your deals</div>
+							</div>
+						</a>
+						<a 
+							href="/deals" 
+							className="flex items-center gap-3 p-4 rounded-lg border border-neutral-700 hover:border-neutral-600 transition-colors group"
+						>
+							<div className="text-2xl">🎨</div>
+							<div>
+								<div className="font-medium group-hover:text-white transition-colors">See NFTs Minted</div>
+								<div className="text-xs text-neutral-500">Check how many NFTs users have minted</div>
+							</div>
+						</a>
+					</div>
 				</section>
 			)}
 		</div>
