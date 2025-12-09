@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { fetchAllDeals, type DealAccount, ixBuyNft, fetchAllListings, type ListingAccount, deriveEscrowPda } from '@/lib/solana/instructions';
@@ -28,6 +28,9 @@ export default function MarketplacePage() {
 	const [listings, setListings] = useState<ListingWithMetadata[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [buying, setBuying] = useState<string | null>(null);
+
+	// Use ref to prevent duplicate transaction execution (atomic check)
+	const isBuyingRef = useRef<string | null>(null);
 
 	const fetchListings = useCallback(async () => {
 		setLoading(true);
@@ -140,10 +143,15 @@ export default function MarketplacePage() {
 			return;
 		}
 
+		const listingKey = listingData.pubkey.toBase58();
+		// Atomic check: prevent duplicate submissions using ref (doesn't depend on re-render)
+		if (isBuyingRef.current !== null) return;
+		isBuyingRef.current = listingKey;
+
 		const nftMint = new PublicKey(listingData.listing.nft_mint);
 		const seller = new PublicKey(listingData.listing.seller);
 		
-		setBuying(listingData.pubkey.toBase58());
+		setBuying(listingKey);
 		const toastId = showToast('loading', 'Buying NFT...', 'Preparing transaction');
 
 		try {
@@ -194,6 +202,7 @@ export default function MarketplacePage() {
 			updateToast(toastId, { type: 'error', title: 'Purchase Failed', message: errorMsg, duration: 10000 });
 		} finally {
 			setBuying(null);
+			isBuyingRef.current = null;
 		}
 	}, [publicKey, signTransaction, connection, showToast, updateToast, fetchListings]);
 

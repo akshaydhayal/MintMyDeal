@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, Transaction } from '@solana/web3.js';
 import { deriveRedeemPda, ixRedeemAndBurn, fetchAllDeals, type DealAccount, ixListNft, deriveEscrowPda, deriveListingPda } from '@/lib/solana/instructions';
@@ -30,6 +30,11 @@ export default function RedeemPage() {
 	const [showListModal, setShowListModal] = useState<UserNFT | null>(null);
 	const [listPrice, setListPrice] = useState('');
 	const [listing, setListing] = useState<string | null>(null);
+	const [redeemSuccessModal, setRedeemSuccessModal] = useState<{ txSig: string; couponCode: string; nftName: string } | null>(null);
+
+	// Use refs to prevent duplicate transaction execution (atomic check)
+	const isRedeemingRef = useRef<string | null>(null);
+	const isListingRef = useRef(false);
 
 	// Fetch user's NFTs using getTokenAccountsByOwner
 	useEffect(() => {
@@ -166,6 +171,9 @@ export default function RedeemPage() {
 		}
 		
 		const mintStr = nft.mint.toBase58();
+		// Atomic check: prevent duplicate submissions using ref (doesn't depend on re-render)
+		if (isRedeemingRef.current !== null) return;
+		isRedeemingRef.current = mintStr;
 		setRedeeming(mintStr);
 		let toastId: string | null = null;
 		
@@ -196,15 +204,33 @@ export default function RedeemPage() {
 			updateToast(toastId, { title: 'Confirming transaction...', message: getShortTxSignature(sig) });
 			await connection.confirmTransaction(sig, 'confirmed');
 			
+			// Generate random 16-digit alphanumeric coupon code
+			const generateCouponCode = () => {
+				const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+				let code = '';
+				for (let i = 0; i < 16; i++) {
+					code += chars.charAt(Math.floor(Math.random() * chars.length));
+				}
+				// Format as XXXX-XXXX-XXXX-XXXX for readability
+				return `${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8, 12)}-${code.slice(12, 16)}`;
+			};
+			const couponCode = generateCouponCode();
+			
 			// Remove NFT from list
 			setUserNFTs(prev => prev.filter(n => n.mint.toBase58() !== mintStr));
+			
+			// Show success modal with transaction and coupon code
+			setRedeemSuccessModal({
+				txSig: sig,
+				couponCode,
+				nftName: nft.name
+			});
 			
 			updateToast(toastId, { 
 				type: 'success', 
 				title: '🎉 NFT Coupon Redeemed!', 
-				message: 'NFT has been burned. Show this transaction to the merchant.',
-				txLink: getExplorerUrl(sig),
-				duration: 10000 
+				message: 'Your coupon code is ready!',
+				duration: 3000 
 			});
 		} catch (e: any) {
 			console.error('redeem error', e);
@@ -216,17 +242,27 @@ export default function RedeemPage() {
 			}
 		} finally {
 			setRedeeming(null);
+			isRedeemingRef.current = null;
 		}
 	}, [publicKey, signTransaction, connection, programId, showToast, updateToast]);
 
 	const onListNFT = useCallback(async () => {
+		// Atomic check FIRST - prevent duplicate submissions using ref (doesn't depend on re-render)
+		if (isListingRef.current) {
+			console.log('⚠️ Listing transaction already in progress, ignoring duplicate call');
+			return;
+		}
+		isListingRef.current = true;
+
 		if (!publicKey || !signTransaction || !showListModal) {
+			isListingRef.current = false;
 			showToast('error', 'Wallet Not Connected', 'Please connect your wallet');
 			return;
 		}
 
 		const priceNum = parseFloat(listPrice);
 		if (!priceNum || priceNum <= 0) {
+			isListingRef.current = false;
 			showToast('error', 'Invalid Price', 'Please enter a valid price');
 			return;
 		}
@@ -235,6 +271,7 @@ export default function RedeemPage() {
 		const nft = showListModal;
 		const mintStr = nft.mint.toBase58();
 
+		// Set state for UI feedback (after ref is set to prevent duplicate calls)
 		setListing(mintStr);
 		const toastId = showToast('loading', 'Listing NFT...', 'Preparing transaction');
 
@@ -264,6 +301,13 @@ export default function RedeemPage() {
 			tx.feePayer = publicKey;
 			tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
 			
+			// Double-check ref before signing (extra safety)
+			if (!isListingRef.current) {
+				console.warn('⚠️ Listing ref was reset, aborting transaction');
+				isListingRef.current = false; // Ensure it's reset
+				return;
+			}
+			
 			const signed = await signTransaction(tx);
 			const sig = await connection.sendRawTransaction(signed.serialize());
 			
@@ -288,6 +332,7 @@ export default function RedeemPage() {
 			updateToast(toastId, { type: 'error', title: 'Listing Failed', message: errorMsg, duration: 10000 });
 		} finally {
 			setListing(null);
+			isListingRef.current = false;
 		}
 	}, [publicKey, signTransaction, connection, programId, showToast, updateToast, showListModal, listPrice]);
 
@@ -515,6 +560,105 @@ export default function RedeemPage() {
 								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 							>
 								{listing === showListModal.mint.toBase58() ? '⏳ Listing...' : '💰 List NFT'}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Redemption Success Modal */}
+			{redeemSuccessModal && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={() => setRedeemSuccessModal(null)}>
+					<div className="relative bg-gradient-to-br from-green-950/90 to-emerald-950/90 rounded-xl border-2 border-green-500/50 shadow-2xl max-w-lg w-full max-h-[95vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+						{/* Scrollable Content */}
+						<div className="flex-1 overflow-y-auto p-5 space-y-4">
+							{/* Header */}
+							<div className="text-center">
+								<div className="text-4xl mb-2">🎉</div>
+								<h3 className="text-xl font-bold text-green-200 mb-1">NFT Redeemed Successfully!</h3>
+								<p className="text-green-300/70 text-xs">
+									<span className="font-semibold text-green-200">{redeemSuccessModal.nftName}</span> has been burned
+								</p>
+							</div>
+
+							{/* Coupon Code Section */}
+							<div className="bg-black/40 rounded-lg border border-green-600/30 p-3 space-y-2">
+								<div className="flex items-center justify-between">
+									<span className="text-xs font-medium text-green-300">Your Coupon Code:</span>
+									<button
+										onClick={() => {
+											navigator.clipboard.writeText(redeemSuccessModal.couponCode.replace(/-/g, ''));
+											showToast('success', 'Copied!', 'Coupon code copied to clipboard');
+										}}
+										className="text-xs px-2 py-1 rounded bg-green-800/50 hover:bg-green-800/70 text-green-200 transition-colors"
+									>
+										📋 Copy
+									</button>
+								</div>
+								<div className="bg-black/60 rounded-lg p-3 border border-green-500/50">
+									<div className="font-mono text-xl font-bold text-green-200 text-center tracking-wider select-all">
+										{redeemSuccessModal.couponCode}
+									</div>
+								</div>
+								<p className="text-xs text-green-300/60 text-center">
+									Use at physical stores or enter online
+								</p>
+							</div>
+
+							{/* Transaction Signature Section */}
+							<div className="bg-black/40 rounded-lg border border-blue-600/30 p-3 space-y-2">
+								<div className="flex items-center justify-between">
+									<span className="text-xs font-medium text-blue-300">Transaction Proof:</span>
+									<button
+										onClick={() => {
+											navigator.clipboard.writeText(redeemSuccessModal.txSig);
+											showToast('success', 'Copied!', 'Transaction signature copied to clipboard');
+										}}
+										className="text-xs px-2 py-1 rounded bg-blue-800/50 hover:bg-blue-800/70 text-blue-200 transition-colors"
+									>
+										📋 Copy
+									</button>
+								</div>
+								<div className="bg-black/60 rounded-lg p-2 border border-blue-500/50 max-h-20 overflow-y-auto">
+									<div className="font-mono text-xs text-blue-200 break-all select-all">
+										{redeemSuccessModal.txSig}
+									</div>
+								</div>
+								<a
+									href={getExplorerUrl(redeemSuccessModal.txSig)}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="block text-center text-xs text-blue-400 hover:text-blue-300 underline"
+								>
+									🔗 View on Solana Explorer →
+								</a>
+								<p className="text-xs text-blue-300/60 text-center">
+									Merchants can verify on-chain
+								</p>
+							</div>
+
+							{/* Instructions */}
+							<div className="bg-yellow-900/30 border border-yellow-700/50 rounded-lg p-3 space-y-1">
+								<div className="flex items-start gap-2">
+									<span className="text-sm">💡</span>
+									<div className="flex-1">
+										<p className="text-xs font-medium text-yellow-200 mb-1">How to use:</p>
+										<ul className="text-xs text-yellow-300/80 space-y-0.5 list-disc list-inside">
+											<li><strong>Physical:</strong> Show code or screen</li>
+											<li><strong>Online:</strong> Enter code or share transaction</li>
+										</ul>
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{/* Close Button - Fixed at bottom */}
+						<div className="p-4 border-t border-green-600/30 bg-green-950/50">
+							<button
+								onClick={() => setRedeemSuccessModal(null)}
+								className="w-full px-4 py-2.5 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors"
+							>
+								✓ Got it!
 							</button>
 						</div>
 					</div>
