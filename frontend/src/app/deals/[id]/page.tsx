@@ -37,12 +37,20 @@ export default function DealDetailPage() {
 	const isMintingRef = useRef(false);
 	const isSubmittingReviewRef = useRef(false);
 
+	// Countdown timer state (must be before conditional returns)
+	const [timeRemaining, setTimeRemaining] = useState<{ days: number; hours: number; minutes: number; seconds: number } | null>(null);
+
 	const dealPubkeyStr = params.id as string; // This is now the PDA address, not deal_id
 
 	// Memoize programId to prevent recreating on every render
 	const programId = useMemo(() => {
 		return new PublicKey(process.env.NEXT_PUBLIC_PROGRAM_ID || '');
 	}, []);
+
+	// Calculate expiry for countdown (must be before conditional returns)
+	const expiry = deal ? (typeof deal.account.expiry === 'bigint' ? Number(deal.account.expiry) : Number(deal.account.expiry)) : 0;
+	const expiryDate = deal ? new Date(expiry * 1000) : new Date();
+	const isExpired = deal ? expiryDate < new Date() : false;
 
 	// Fetch deal data - only depends on dealPubkeyStr which is stable from URL params
 	useEffect(() => {
@@ -100,6 +108,36 @@ export default function DealDetailPage() {
 		})();
 		return () => { mounted = false };
 	}, [deal, publicKey, connection, programId]);
+
+	// Countdown timer effect (MUST be after all other useEffects, but before conditional returns)
+	useEffect(() => {
+		if (!deal || isExpired || expiry === 0) {
+			setTimeRemaining(null);
+			return;
+		}
+
+		const updateCountdown = () => {
+			const now = Math.floor(Date.now() / 1000);
+			const remaining = expiry - now;
+
+			if (remaining <= 0) {
+				setTimeRemaining(null);
+				return;
+			}
+
+			const days = Math.floor(remaining / 86400);
+			const hours = Math.floor((remaining % 86400) / 3600);
+			const minutes = Math.floor((remaining % 3600) / 60);
+			const seconds = remaining % 60;
+
+			setTimeRemaining({ days, hours, minutes, seconds });
+		};
+
+		updateCountdown();
+		const interval = setInterval(updateCountdown, 1000);
+
+		return () => clearInterval(interval);
+	}, [expiry, isExpired, deal]);
 
 	const onSubmitReview = useCallback(async () => {
 		if (!publicKey || !signTransaction || !deal) {
@@ -311,8 +349,6 @@ export default function DealDetailPage() {
 	const totalSupply = deal.account.total_supply as number;
 	const isSoldOut = minted >= totalSupply;
 	const percentageMinted = (minted / totalSupply) * 100;
-	const expiryDate = new Date(Number(deal.account.expiry) * 1000);
-	const isExpired = expiryDate < new Date();
 
 	return (
 		<div className="space-y-6">
@@ -359,6 +395,86 @@ export default function DealDetailPage() {
 							<div className="text-2xl font-bold text-green-400">{deal.account.discount_percent}% OFF</div>
 						</div>
 					</div>
+
+					{/* Expiry Info with Countdown */}
+					<div className="rounded-lg border border-neutral-700 bg-neutral-900/50 p-4 space-y-3">
+						<div className="text-sm font-medium mb-2">Valid Until</div>
+						<div className="flex items-center gap-2">
+							<span className="text-lg">
+								{isExpired ? '⏰' : '📅'}
+							</span>
+							<div>
+								<div className={isExpired ? 'text-red-400' : 'text-neutral-200'}>
+									{expiryDate.toLocaleDateString('en-US', { 
+										year: 'numeric', 
+										month: 'long', 
+										day: 'numeric',
+										hour: '2-digit',
+										minute: '2-digit'
+									})}
+								</div>
+								{isExpired && (
+									<div className="text-xs text-red-400 mt-1">This deal has expired</div>
+								)}
+							</div>
+						</div>
+
+						{/* Countdown Timer */}
+						{!isExpired && timeRemaining && (
+							<div className="pt-3 border-t border-neutral-800">
+								<div className="text-xs text-neutral-500 mb-2">Time Remaining</div>
+								<div className="flex items-center gap-3">
+									{timeRemaining.days > 0 && (
+										<div className="text-center">
+											<div className="text-2xl font-bold text-orange-400">{timeRemaining.days}</div>
+											<div className="text-xs text-neutral-500">days</div>
+										</div>
+									)}
+									<div className="text-center">
+										<div className="text-2xl font-bold text-orange-400">{timeRemaining.hours}</div>
+										<div className="text-xs text-neutral-500">hours</div>
+									</div>
+									<div className="text-center">
+										<div className="text-2xl font-bold text-orange-400">{timeRemaining.minutes}</div>
+										<div className="text-xs text-neutral-500">minutes</div>
+									</div>
+									<div className="text-center">
+										<div className="text-xl font-bold text-orange-300">{timeRemaining.seconds}</div>
+										<div className="text-xs text-neutral-500">seconds</div>
+									</div>
+								</div>
+							</div>
+						)}
+					</div>
+
+					{/* Metadata Links */}
+					{(deal.account.image_uri || deal.account.metadata_uri) && (
+						<div className="rounded-lg border border-neutral-800 p-4 bg-neutral-900/30">
+							<div className="text-sm font-medium mb-3">🔗 Links</div>
+							<div className="flex flex-wrap gap-3">
+								{deal.account.image_uri && (
+									<a
+										href={deal.account.image_uri}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="text-sm text-blue-400 hover:text-blue-300 underline"
+									>
+										View Image on Arweave →
+									</a>
+								)}
+								{deal.account.metadata_uri && (
+									<a
+										href={deal.account.metadata_uri}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="text-sm text-blue-400 hover:text-blue-300 underline"
+									>
+										View Metadata on Arweave →
+									</a>
+								)}
+							</div>
+						</div>
+					)}
 				</div>
 
 				{/* Right: Details */}
@@ -399,30 +515,6 @@ export default function DealDetailPage() {
 						</div>
 						<div className="text-xs text-neutral-500 mt-1">
 							{isSoldOut ? 'Sold Out' : `${(100 - percentageMinted).toFixed(1)}% remaining`}
-						</div>
-					</div>
-
-					{/* Expiry Info */}
-					<div className="rounded-lg border border-neutral-700 bg-neutral-900/50 p-4">
-						<div className="text-sm font-medium mb-2">Valid Until</div>
-						<div className="flex items-center gap-2">
-							<span className="text-lg">
-								{isExpired ? '⏰' : '📅'}
-							</span>
-							<div>
-								<div className={isExpired ? 'text-red-400' : 'text-neutral-200'}>
-									{expiryDate.toLocaleDateString('en-US', { 
-										year: 'numeric', 
-										month: 'long', 
-										day: 'numeric',
-										hour: '2-digit',
-										minute: '2-digit'
-									})}
-								</div>
-								{isExpired && (
-									<div className="text-xs text-red-400">This deal has expired</div>
-								)}
-							</div>
 						</div>
 					</div>
 
@@ -484,35 +576,6 @@ export default function DealDetailPage() {
 					</div>
 				</div>
 			</div>
-
-			{/* Bottom Section: Metadata Links */}
-			{(deal.account.image_uri || deal.account.metadata_uri) && (
-				<div className="rounded-lg border border-neutral-800 p-4 bg-neutral-900/30">
-					<div className="text-sm font-medium mb-3">🔗 Links</div>
-					<div className="flex flex-wrap gap-3">
-						{deal.account.image_uri && (
-							<a
-								href={deal.account.image_uri}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="text-sm text-blue-400 hover:text-blue-300 underline"
-							>
-								View Image on Arweave →
-							</a>
-						)}
-						{deal.account.metadata_uri && (
-							<a
-								href={deal.account.metadata_uri}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="text-sm text-blue-400 hover:text-blue-300 underline"
-							>
-								View Metadata on Arweave →
-							</a>
-						)}
-					</div>
-				</div>
-			)}
 
 			{/* Reviews Section */}
 			<div className="rounded-lg border border-amber-800/50 bg-amber-950/20 p-6">

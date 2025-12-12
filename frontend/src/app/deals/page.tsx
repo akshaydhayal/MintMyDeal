@@ -72,6 +72,9 @@ export default function DealsPage() {
 		const minted = d.account.minted as number;
 		const totalSupply = d.account.total_supply as number;
 		const isSoldOut = minted >= totalSupply;
+		const expiry = typeof d.account.expiry === 'bigint' ? Number(d.account.expiry) : Number(d.account.expiry);
+		const expiryDate = new Date(expiry * 1000);
+		const isExpired = expiry < Math.floor(Date.now() / 1000);
 		
 		return (
 			<Link 
@@ -112,9 +115,12 @@ export default function DealsPage() {
 							{d.account.minted}/{d.account.total_supply} minted
 						</div>
 					</div>
-					<div className="pt-2">
+					<div className="pt-2 flex items-center justify-between gap-2">
 						<div className="text-xs text-blue-400 group-hover:text-blue-300 flex items-center gap-1">
 							View Deal Details →
+						</div>
+						<div className={`text-xs ${isExpired ? 'text-yellow-400' : 'text-neutral-500'}`}>
+							🕒 {isExpired ? 'Expired' : `Expires ${expiryDate.toLocaleDateString()}`}
 						</div>
 					</div>
 				</div>

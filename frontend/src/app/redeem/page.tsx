@@ -165,15 +165,21 @@ export default function RedeemPage() {
 	}, [publicKey, connection, programId, showToast]);
 
 	const onRedeemNFT = useCallback(async (nft: UserNFT) => {
+		const mintStr = nft.mint.toBase58();
+		
+		// Atomic check FIRST - prevent duplicate submissions using ref (doesn't depend on re-render)
+		if (isRedeemingRef.current !== null) {
+			console.log('⚠️ Redemption transaction already in progress, ignoring duplicate call');
+			return;
+		}
+		isRedeemingRef.current = mintStr;
+		
 		if (!publicKey || !signTransaction) {
+			isRedeemingRef.current = null;
 			showToast('error', 'Wallet Not Connected', 'Please connect your wallet');
 			return;
 		}
 		
-		const mintStr = nft.mint.toBase58();
-		// Atomic check: prevent duplicate submissions using ref (doesn't depend on re-render)
-		if (isRedeemingRef.current !== null) return;
-		isRedeemingRef.current = mintStr;
 		setRedeeming(mintStr);
 		let toastId: string | null = null;
 		
@@ -253,29 +259,33 @@ export default function RedeemPage() {
 			return;
 		}
 		isListingRef.current = true;
-
-		if (!publicKey || !signTransaction || !showListModal) {
-			isListingRef.current = false;
-			showToast('error', 'Wallet Not Connected', 'Please connect your wallet');
-			return;
-		}
-
-		const priceNum = parseFloat(listPrice);
-		if (!priceNum || priceNum <= 0) {
-			isListingRef.current = false;
-			showToast('error', 'Invalid Price', 'Please enter a valid price');
-			return;
-		}
-
-		const priceLamports = BigInt(Math.floor(priceNum * 1e9)); // Convert SOL to lamports
-		const nft = showListModal;
-		const mintStr = nft.mint.toBase58();
-
-		// Set state for UI feedback (after ref is set to prevent duplicate calls)
-		setListing(mintStr);
-		const toastId = showToast('loading', 'Listing NFT...', 'Preparing transaction');
+		let toastId: string | null = null;
 
 		try {
+			if (!publicKey || !signTransaction || !showListModal) {
+				isListingRef.current = false;
+				showToast('error', 'Wallet Not Connected', 'Please connect your wallet');
+				return;
+			}
+
+			const nft = showListModal; // After validation, we know it's not null
+			const mintStr = nft.mint.toBase58();
+
+			// Set state IMMEDIATELY after validation to disable button ASAP
+			setListing(mintStr);
+
+			const priceNum = parseFloat(listPrice);
+			if (!priceNum || priceNum <= 0) {
+				isListingRef.current = false;
+				setListing(null);
+				showToast('error', 'Invalid Price', 'Please enter a valid price');
+				return;
+			}
+
+			const priceLamports = BigInt(Math.floor(priceNum * 1e9)); // Convert SOL to lamports
+
+			toastId = showToast('loading', 'Listing NFT...', 'Preparing transaction');
+
 			const [escrowPda] = deriveEscrowPda(programId, nft.mint);
 			const escrowATA = getAssociatedTokenAddressSync(nft.mint, escrowPda, true);
 			const sellerATA = getAssociatedTokenAddressSync(nft.mint, publicKey);
@@ -304,21 +314,20 @@ export default function RedeemPage() {
 			// Double-check ref before signing (extra safety)
 			if (!isListingRef.current) {
 				console.warn('⚠️ Listing ref was reset, aborting transaction');
-				isListingRef.current = false; // Ensure it's reset
 				return;
 			}
 			
 			const signed = await signTransaction(tx);
 			const sig = await connection.sendRawTransaction(signed.serialize());
-			
+
 			updateToast(toastId, { title: 'Confirming transaction...', message: getShortTxSignature(sig) });
 			await connection.confirmTransaction(sig, 'confirmed');
-			
+
 			// Remove NFT from list (it's now in escrow)
 			setUserNFTs(prev => prev.filter(n => n.mint.toBase58() !== mintStr));
 			setShowListModal(null);
 			setListPrice('');
-			
+
 			updateToast(toastId, {
 				type: 'success',
 				title: 'NFT Listed Successfully!',
@@ -329,7 +338,11 @@ export default function RedeemPage() {
 		} catch (e: any) {
 			console.error('list error', e);
 			const errorMsg = parseContractError(e);
-			updateToast(toastId, { type: 'error', title: 'Listing Failed', message: errorMsg, duration: 10000 });
+			if (toastId) {
+				updateToast(toastId, { type: 'error', title: 'Listing Failed', message: errorMsg, duration: 10000 });
+			} else {
+				showToast('error', 'Listing Failed', errorMsg);
+			}
 		} finally {
 			setListing(null);
 			isListingRef.current = false;
@@ -555,11 +568,25 @@ export default function RedeemPage() {
 								Cancel
 							</button>
 							<button
-								onClick={onListNFT}
-								disabled={!listPrice || listing === showListModal.mint.toBase58()}
+								type="button"
+								onClick={(e) => {
+									e.preventDefault();
+									e.stopPropagation();
+									// Additional check before calling onListNFT (double protection)
+									if (isListingRef.current) {
+										console.log('⚠️ Listing already in progress, ignoring click');
+										return;
+									}
+									if (listing === showListModal.mint.toBase58()) {
+										console.log('⚠️ Listing already in progress (state check), ignoring click');
+										return;
+									}
+									onListNFT();
+								}}
+								disabled={!listPrice || listing === showListModal.mint.toBase58() || isListingRef.current}
 								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 							>
-								{listing === showListModal.mint.toBase58() ? '⏳ Listing...' : '💰 List NFT'}
+								{listing === showListModal.mint.toBase58() || isListingRef.current ? '⏳ Listing...' : '💰 List NFT'}
 							</button>
 						</div>
 					</div>
