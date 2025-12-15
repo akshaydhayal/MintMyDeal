@@ -64,7 +64,7 @@ MintMyDeals revolutionizes traditional loyalty programs by transforming coupons 
 ## 📸 Screenshots
 
 ### Homepage / Deals Discovery
-![Deals Discovery Page](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/home%20page.png)
+![Deals Discovery Page](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/Mint-My-Deals0.png)
 *Browse active and expired deals with our intuitive tab-based interface*
 
 ### Merchant Dashboard
@@ -79,7 +79,7 @@ MintMyDeals revolutionizes traditional loyalty programs by transforming coupons 
 *Create deals with images, discounts, supply limits, and expiry dates*
 
 ### Deal Detail Page
-![Deal Details](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/deal%20page.png)
+![Deal Details](https://github.com/akshaydhayal/MintMyDeal/blob/main/frontend/assets/Mint-My-Deals00.png)
 *View deal information, mint coupons, and read reviews*
 
 ### Marketplace
@@ -99,14 +99,6 @@ MintMyDeals revolutionizes traditional loyalty programs by transforming coupons 
 *Clear redemption confirmation with coupon code and transaction proof*
 
 
----
-
-## 🎥 Demo Video
-
-### Full Platform Walkthrough
-[![Watch the Demo](https://img.shields.io/badge/▶️-Watch%20Demo%20Video-red?style=for-the-badge)](https://drive.google.com/file/d/17YiR2Htr5QRS7cTLOMFCmOawBbG_Y0kF/view?usp=sharing)
-
-**Video Description:** Complete walkthrough showing merchant registration, deal creation, user minting, redemption, and marketplace trading.
 
 ---
 ## 🛠 Tech Stack
